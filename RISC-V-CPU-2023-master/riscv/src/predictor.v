@@ -1,9 +1,6 @@
 `include "./predictor.v"
 
-module saturation_counter #(
-    parameter LOCAL_WIDTH = 10,
-    parameter LOCAL_SIZE  = 2 ** LOCAL_WIDTH
-) (
+module saturation_counter (
     input wire clk_in,  // system clock signal
     input wire rst_in,  // reset signal
     input wire transition_signal,  // 1 for status transition
@@ -15,6 +12,7 @@ module saturation_counter #(
   reg [1:0] status;  // 10,11 for jumping, 00,01 for continuing 
 
   assign prediction = status[1];
+  assign second_prediction = status[0];
 
   always @(posedge clk_in) begin
     if (rst_in) begin
@@ -85,7 +83,10 @@ module counter_group (
 endmodule
 
 
-module predictor (
+module predictor #(
+    parameter LOCAL_WIDTH = 10,
+    parameter LOCAL_SIZE  = 2 ** LOCAL_WIDTH
+) (
     input wire clk_in,  // system clock signal
     input wire rst_in,  // reset signal
     input wire rdy_in,  // ready signal, pause cpu when low
@@ -95,9 +96,9 @@ module predictor (
     output wire prediction  // 1 for jumping, 0 for continuing
 );
 
-  wire [             1:0] selection;
-  reg  [LOCAL_WIDTH -1:0] counter_id;
-  wire [  LOCAL_SIZE-1:0] sprediction_group;
+  wire [            1:0] selection;
+  reg  [LOCAL_WIDTH-1:0] counter_id;
+  wire [ LOCAL_SIZE-1:0] sprediction_group;
 
   assign prediction = prediction_group[counter_id];
 
