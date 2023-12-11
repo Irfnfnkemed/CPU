@@ -45,7 +45,7 @@ module predictor #(
 
   wire [1:0] selection;  // select the counter among 4 counters according to last two branches
   wire [3:0] prediction_group[LOCAL_SIZE-1:0];
-  wire prediction_select[LOCAL_SIZE-1:0];
+  wire prediction_select[LOCAL_WIDTH-1:0];
   reg [LOCAL_WIDTH-1:0] counter_id; // selected counter group index according to the instruction address
 
   saturation_counter history_counter (
