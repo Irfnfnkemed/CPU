@@ -1,5 +1,3 @@
-`include "./predictor.v"
-
 module saturation_counter (
     input wire clk_in,  // system clock signal
     input wire rst_in,  // reset signal
@@ -19,11 +17,11 @@ module saturation_counter (
       status <= 2'b01;
     end else if (transition_signal) begin
       if (branch) begin
-        status[1] = status[1] | status[0];
-        status[0] = status[1] | ~status[0];
+        status[1] <= status[1] | status[0];
+        status[0] <= status[1] | ~status[0];
       end else begin
-        status[1] = status[1] & status[0];
-        status[0] = status[1] & ~status[0];
+        status[1] <= status[1] & status[0];
+        status[0] <= status[1] & ~status[0];
       end
     end
   end
@@ -39,14 +37,13 @@ module predictor #(
     input wire rdy_in,  // ready signal, pause cpu when low
     input wire transition_signal,  // 1 for status transition
     input wire branch,  // 1 for jumping, 0 for continuing
-    input wire [LOCAL_WIDTH + 1: 2] instr_addr,  // 10 bits in instruction address for selecting counter group
+    input wire [LOCAL_WIDTH - 1: 0] instr_addr,  // 10 bits in instruction address for selecting counter group
     output wire prediction  // 1 for jumping, 0 for continuing
 );
 
   wire [1:0] selection;  // select the counter among 4 counters according to last two branches
   wire [3:0] prediction_group[LOCAL_SIZE-1:0];
-  wire prediction_select[LOCAL_WIDTH-1:0];
-  reg [LOCAL_WIDTH-1:0] counter_id; // selected counter group index according to the instruction address
+  wire prediction_select[LOCAL_SIZE-1:0];
 
   saturation_counter history_counter (
       .clk_in           (clk_in),
@@ -64,7 +61,7 @@ module predictor #(
         saturation_counter unit_counter (
             .clk_in           (clk_in),
             .rst_in           (rst_in),
-            .transition_signal(transition_signal & selection == j),
+            .transition_signal(transition_signal & (instr_addr == i) & (selection == j)),
             .branch           (branch),
             .prediction       (prediction_group[i][j])
         );
@@ -77,14 +74,6 @@ module predictor #(
     end
   endgenerate
 
-  assign prediction = prediction_select[counter_id];
-
-  always @(posedge clk_in) begin
-    if (rst_in) begin
-      counter_id <= {LOCAL_WIDTH{1'b0}};
-    end else if (rdy_in) begin
-      counter_id <= instr_addr;
-    end
-  end
+  assign prediction = prediction_select[instr_addr];
 
 endmodule
