@@ -1,5 +1,5 @@
-`define REG_WIDTH 5
-`define OPCODE_WIDTH 5
+`define REG_WIDTH 32
+`define OPCODE_ALU_WIDTH 4
 
 module reservation_station #(
     parameter RS_WIDTH  = 4,
@@ -12,7 +12,7 @@ module reservation_station #(
 
     //issued instr from instr latch (fetch value/tag from register file)
     input wire issue,  // 1 for issuing instruction 
-    input wire [`OPCODE_WIDTH-1 : 0] opcode_issue,
+    input wire [`OPCODE_ALU_WIDTH-1 : 0] opcode_issue,
     input wire [`REG_WIDTH-1 : 0] rs_issue_value_1,
     input wire [`REG_WIDTH-1 : 0] rs_issue_value_2,
     input wire [ROB_WIDTH-1 : 0] rs_issue_tag_1,
@@ -24,14 +24,22 @@ module reservation_station #(
     //output data for ALU calculating, supporting two ALUs
     output reg busy_alu_1,  // 1 for sending calulating task to ALU
     output reg busy_alu_2,  // 1 for sending calulating task to ALU
-    output reg [`OPCODE_WIDTH-1:0] opcode_alu_1,
-    output reg [`OPCODE_WIDTH-1:0] opcode_alu_2,
+    output reg [`OPCODE_ALU_WIDTH-1:0] opcode_alu_1,
+    output reg [`OPCODE_ALU_WIDTH-1:0] opcode_alu_2,
     output reg [`REG_WIDTH-1 : 0] lhs_alu_1,
     output reg [`REG_WIDTH-1 : 0] lhs_alu_2,
     output reg [`REG_WIDTH-1 : 0] rhs_alu_1,
     output reg [`REG_WIDTH-1 : 0] rhs_alu_2,
     output reg [ROB_WIDTH-1:0] rd_tag_alu_1,
     output reg [ROB_WIDTH-1:0] rd_tag_alu_2,
+
+    // results from ALU, flushing rs
+    input wire done_alu_1,  // 1 for ALU done
+    input wire done_alu_2,  // 1 for ALU done
+    input wire [`REG_WIDTH-1 : 0] value_alu_1,
+    input wire [`REG_WIDTH-1 : 0] value_alu_2,
+    input wire [ROB_WIDTH-1 : 0] tag_alu_1,
+    input wire [ROB_WIDTH-1 : 0] tag_alu_2,
 
     // commitment from ROB, flushing rs
     input wire commit,  // 1 for committing
@@ -43,7 +51,7 @@ module reservation_station #(
 
   //RS lines
   reg busy[RS_SIZE-1:0];  //1 for busy
-  reg [`OPCODE_WIDTH-1 : 0] opcode[RS_SIZE-1:0];  // opcode for ALU calculation categories
+  reg [`OPCODE_ALU_WIDTH-1 : 0] opcode[RS_SIZE-1:0];  // opcode for ALU calculation categories
   reg [`REG_WIDTH-1 : 0] rs_value_1[RS_SIZE-1:0];
   reg [`REG_WIDTH-1 : 0] rs_value_2[RS_SIZE-1:0];
   reg [ROB_WIDTH-1 : 0] rs_tag_1[RS_SIZE-1:0];
@@ -51,35 +59,32 @@ module reservation_station #(
   reg rs_valid_1[RS_SIZE-1:0];  // 1 for rs_1 value is valid
   reg rs_valid_2[RS_SIZE-1:0];  // 1 for rs_2 value is valid
   reg [ROB_WIDTH-1 : 0] rd_tag[RS_SIZE-1:0];
-  reg rd_valid[RS_SIZE-1:0];  // 1 for rd value is valid
   wire [RS_WIDTH-1 : 0] free_pos;  // free position when RS is not full 
 
   // assign to get the free position in RS
+  // if first line is free, select_pos is set to its index; else if second line is free, select_pos is set to its index
+  // if both lines are busy, set valid_pos to 0; else set it to 1
   genvar i_select;
   generate
     wire [RS_WIDTH-1:0] select_pos[RS_SIZE-1:1];
     wire valid_pos[RS_SIZE-1:1];  //1 for valid(free)
-    // if first line is free, select_pos is set to its index; else if second line is free, select_pos is set to its index
-    // if both lines are busy, set valid_pos to 0; else set it to 1
     for (i_select = RS_SIZE / 2; i_select < RS_SIZE; i_select = i_select + 1) begin
       assign tmp1 = (i_select - 8) << 1;
       assign tmp2 = tmp1 + 1;
       assign select_pos[i_select] = ({RS_WIDTH{~busy[tmp1]}} & tmp1) |
-                                ({RS_WIDTH{busy[tmp1]}} & {RS_WIDTH{~busy[tmp2]}} & tmp2);
+                                    ({RS_WIDTH{busy[tmp1]}} & {RS_WIDTH{~busy[tmp2]}} & tmp2);
       assign valid_pos[i_select] = ~busy[tmp1] | ~busy[tmp2];
     end
     for (i_select = 1; i_select < RS_SIZE / 2; i_select = i_select + 1) begin
       assign tmp1 = i_select << 1;
       assign tmp2 = tmp1 + 1;
       assign select_pos[i_select] = ({RS_WIDTH{~valid_pos[tmp1]}} & select_pos[tmp1]) |
-                                ({RS_WIDTH{valid_pos[tmp1]}} & {RS_WIDTH{~valid_pos[tmp2]}} & select_pos[tmp2]);
+                                    ({RS_WIDTH{valid_pos[tmp1]}} & {RS_WIDTH{~valid_pos[tmp2]}} & select_pos[tmp2]);
       assign valid_pos[i_select] = ~(busy[tmp1] & busy[tmp2]);
     end
     assign full = valid_pos[1];
     assign free_pos = select_pos[1];
   endgenerate
-
-
 
   integer i;
 
@@ -111,15 +116,55 @@ module reservation_station #(
 
   integer i_commit;
   always @(posedge clk_in) begin  // flush rs values according to the commitment
-    for (i_commit = 0; i_commit < RS_SIZE; i_commit = i_commit + 1) begin
-      if (busy[i]) begin
-        if (~rs_valid_1[i] && (rs_tag_1[i] == commit_tag)) begin
-          rs_valid_1[i] <= 1'b1;
-          rs_value_1[i] <= commit_value;
+    if (rdy_in & commit) begin
+      for (i_commit = 0; i_commit < RS_SIZE; i_commit = i_commit + 1) begin
+        if (busy[i]) begin
+          if (~rs_valid_1[i] && (rs_tag_1[i] == commit_tag)) begin
+            rs_valid_1[i] <= 1'b1;
+            rs_value_1[i] <= commit_value;
+          end
+          if (~rs_valid_2[i] && (rs_tag_2[i] == commit_tag)) begin
+            rs_valid_2[i] <= 1'b1;
+            rs_value_2[i] <= commit_value;
+          end
         end
-        if (~rs_valid_2[i] && (rs_tag_2[i] == commit_tag)) begin
-          rs_valid_2[i] <= 1'b1;
-          rs_value_2[i] <= commit_value;
+      end
+    end
+  end
+
+  integer i_alu_1;
+  always @(posedge clk_in) begin  // flush rs values according to the ALU1 result
+    if (rdy_in & done_alu_1) begin
+      busy_alu_1 <= 1'b0;  // reset alu to free status
+      for (i_alu_1 = 0; i_alu_1 < RS_SIZE; i_alu_1 = i_alu_1 + 1) begin
+        if (busy[i]) begin
+          if (~rs_valid_1[i] && (rs_tag_1[i] == tag_alu_1)) begin
+            rs_valid_1[i] <= 1'b1;
+            rs_value_1[i] <= value_alu_1;
+          end
+          if (~rs_valid_2[i] && (rs_tag_2[i] == tag_alu_1)) begin
+            rs_valid_2[i] <= 1'b1;
+            rs_value_2[i] <= value_alu_1;
+          end
+        end
+      end
+    end
+  end
+
+  integer i_alu_2;
+  always @(posedge clk_in) begin  // flush rs values according to the ALU2 result
+    if (rdy_in & done_alu_2) begin
+      busy_alu_1 <= 1'b0;  // reset alu to free status
+      for (i_alu_1 = 0; i_alu_1 < RS_SIZE; i_alu_1 = i_alu_1 + 1) begin
+        if (busy[i]) begin
+          if (~rs_valid_1[i] && (rs_tag_1[i] == tag_alu_1)) begin
+            rs_valid_1[i] <= 1'b1;
+            rs_value_1[i] <= value_alu_1;
+          end
+          if (~rs_valid_2[i] && (rs_tag_2[i] == tag_alu_1)) begin
+            rs_valid_2[i] <= 1'b1;
+            rs_value_2[i] <= value_alu_1;
+          end
         end
       end
     end

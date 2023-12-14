@@ -1,5 +1,5 @@
 `define REG_SIZE 32
-`define REG_WIDTH 5
+`define REG_WIDTH 32
 
 module register_file #(
     parameter ROB_WIDTH = 4
