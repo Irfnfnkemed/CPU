@@ -80,7 +80,7 @@ module reservation_station #(
       assign tmp2 = tmp1 + 1;
       assign select_pos[i_select] = ({RS_WIDTH{~valid_pos[tmp1]}} & select_pos[tmp1]) |
                                     ({RS_WIDTH{valid_pos[tmp1]}} & {RS_WIDTH{~valid_pos[tmp2]}} & select_pos[tmp2]);
-      assign valid_pos[i_select] = ~(busy[tmp1] & busy[tmp2]);
+      assign valid_pos[i_select] = ~(valid_pos[tmp1] & valid_pos[tmp2]);
     end
     assign full = valid_pos[1];
     assign free_pos = select_pos[1];
