@@ -1,25 +1,141 @@
+`define FREE_STATUS 2'b00
+`define INSTR_FETCH_STATUS 2'b01
+`define LSB_LOAD_STATUS 2'b10
+`define LSB_STORE_STATUS 2'b11
+
 module memory_controller (
     input wire clk_in,  // system clock signal
     input wire rst_in,  // reset signal
     input wire rdy_in,  // ready signal, pause cpu when low
 
-    input  wire [ 7:0] mem_din,   // data input bus
-    output wire [ 7:0] mem_dout,  // data output bus
-    output wire [31:0] mem_a,     // address bus (only 17:0 is used)
-    output wire        mem_wr,    // write/read signal (1 for write)
+    input  wire [ 7:0] mem_din,        // data input bus
+    output reg  [ 7:0] mem_dout,       // data output bus
+    output reg  [31:0] mem_a,          // address bus (only 17:0 is used)
+    output reg         mem_wr,         // write/read signal (1 for write)
+    input  wire        io_buffer_full, // 1 if uart buffer is full
 
-    input wire io_buffer_full,  // 1 if uart buffer is full
+    input  wire        instr_signal,  // 1 for instruction fetch
+    input  wire [31:0] instr_a,       // instruction address
+    output reg  [63:0] instr_d,       // instruction content (fetch 2 instr)
+    output reg         instr_done,    // 1 when done
 
-    input wire [1:0] status_signal, // 11 for fetching instruction, 10 for load, 01 for store, 00 for doing nothing
-
-    input  wire [31:0] instr_a,
-    output wire [31:0] instr_d,
-    output wire        instr_done, // 1 when done
-
-    input  wire [31:0] lsb_addr,
-    input  wire [31:0] lsb_din,   // data for store
-    output wire [31:0] lsb_dout,  // data for load
-    output wire        lsb_done   // 1 when done
+    input  wire        lsb_signal,  // 1 for load/store task
+    input  wire        lsb_wr,      // 1 for write
+    input  wire [ 1:0] lsb_len,     // length(byte) of laod/store (1 byte, 2 bytes, 4 bytes)
+    input  wire [31:0] lsb_a,       // load/store address
+    input  wire [31:0] lsb_din,     // data for store
+    output reg  [31:0] lsb_dout,    // data for load
+    output reg         lsb_done     // 1 when done
 );
+
+  reg [1:0] status;
+  reg [4:0] stage;  // memory read/write stages
+
+  always @(posedge clk_in) begin  // reset memory controller
+    if (rst_in) begin
+      status <= `FREE_STATUS;
+      mem_a <= 32'b0;
+      mem_wr <= 1'b0;
+      instr_done <= 1'b0;
+      lsb_done <= 1'b0;
+    end
+  end
+
+  always @(posedge clk_in) begin  // pause CPU, set mem_wr to READ to avoid writing wrongly
+    if (~rdy_in) begin
+      mem_a <= 32'hFFFFFFFF;
+      mem_wr <= 1'b0;
+      instr_done <= 1'b0;
+      lsb_done <= 1'b0;
+    end
+  end
+
+  always @(posedge clk_in) begin
+    if (rdy_in) begin
+      case (status)
+        `FREE_STATUS: begin
+          instr_done <= 1'b0;
+          lsb_done   <= 1'b0;
+          if (instr_signal) begin
+            status <= `INSTR_FETCH_STATUS;
+            stage  <= 4'b0000;
+            mem_a  <= instr_a;
+            mem_wr <= 1'b0;
+          end else if (lsb_signal) begin
+            if (lsb_wr) begin
+              status <= (~io_buffer_full && lsb_len == 1) ? `FREE_STATUS : `LSB_STORE_STATUS;// if only need to store one byte, set to LSB_STORE_STATUS is not necessary
+              if (~io_buffer_full) begin
+                stage <= 4'b0001;  // store first byte in this cycle
+              end else begin
+                stage <= 4'b0000;  // do not store in this cycle
+              end
+              mem_dout <= lsb_din[7:0];
+              mem_a <= lsb_a;
+              mem_wr <= 1'b1;
+            end else begin
+              status <= `LSB_LOAD_STATUS;
+              stage  <= 4'b0000;
+              mem_a  <= lsb_a;
+              mem_wr <= 1'b0;
+            end
+          end
+        end
+        `INSTR_FETCH_STATUS: begin
+          mem_wr <= 1'b0;
+          case (stage)  // begin at 1, for loading nead one cycle
+            1: instr_d[7:0] <= mem_din;
+            2: instr_d[15:8] <= mem_din;
+            3: instr_d[23:16] <= mem_din;
+            4: instr_d[31:24] <= mem_din;
+            5: instr_d[39:32] <= mem_din;
+            6: instr_d[47:40] <= mem_din;
+            7: instr_d[55:48] <= mem_din;
+            8: instr_d[63:56] <= mem_din;
+          endcase
+          if (stage == 8) begin  // finish fetch
+            status <= `FREE_STATUS;
+            instr_done <= 1'd1;
+          end else begin
+            mem_a <= mem_a + 1;
+            stage <= stage + 1;
+          end
+        end
+        `LSB_LOAD_STATUS: begin
+          mem_wr <= 1'b0;
+          case (stage)  // begin at 1, for loading nead one cycle
+            1: lsb_dout[7:0] <= mem_din;
+            2: lsb_dout[15:8] <= mem_din;
+            3: lsb_dout[23:16] <= mem_din;
+            4: lsb_dout[31:24] <= mem_din;
+          endcase
+          if (stage == lsb_len) begin  // finish
+            status   <= `FREE_STATUS;
+            lsb_done <= 1'd1;
+          end else begin
+            mem_a <= mem_a + 1;
+            stage <= stage + 1;
+          end
+        end
+        `LSB_STORE_STATUS: begin
+          mem_wr <= 1'b1;
+          if (~io_buffer_full) begin
+            case (stage)
+              0: mem_dout <= lsb_din[7:0];
+              1: mem_dout <= lsb_din[15:8];
+              2: mem_dout <= lsb_din[23:16];
+              3: mem_dout <= lsb_din[31:24];
+            endcase
+            mem_a <= lsb_a + stage;
+            if (stage == lsb_len - 1) begin  // finish
+              status   <= `FREE_STATUS;
+              lsb_done <= 1'd1;
+            end else begin
+              stage <= stage + 1;
+            end
+          end
+        end
+      endcase
+    end
+  end
 
 endmodule
