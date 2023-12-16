@@ -8,17 +8,20 @@ module memory_controller (
     input wire rst_in,  // reset signal
     input wire rdy_in,  // ready signal, pause cpu when low
 
+    // with memory
     input  wire [ 7:0] mem_din,        // data input bus
     output reg  [ 7:0] mem_dout,       // data output bus
     output reg  [31:0] mem_a,          // address bus (only 17:0 is used)
     output reg         mem_wr,         // write/read signal (1 for write)
     input  wire        io_buffer_full, // 1 if uart buffer is full
 
+    // with instruction-fetch (or i-cache)
     input  wire        instr_signal,  // 1 for instruction fetch
     input  wire [31:0] instr_a,       // instruction address
     output reg  [63:0] instr_d,       // instruction content (fetch 2 instr)
     output reg         instr_done,    // 1 when done
 
+    // with LSB
     input  wire        lsb_signal,  // 1 for load/store task
     input  wire        lsb_wr,      // 1 for write
     input  wire [ 1:0] lsb_len,     // length(byte) of laod/store (1 byte, 2 bytes, 4 bytes)
