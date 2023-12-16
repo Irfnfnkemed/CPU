@@ -36,11 +36,17 @@ module alu #(
     output reg [`REG_WIDTH-1 : 0] result_rs,
     output reg [ROB_WIDTH-1:0] tag_rs,
 
+    //send result to LSB
+    output reg done_lsb,
+    output reg [`REG_WIDTH-1 : 0] result_lsb,
+    output reg [ROB_WIDTH-1:0] tag_lsb,
+
     //send result to ROB
     output reg done_rob,
     output reg [`REG_WIDTH-1 : 0] result_rob,
     output reg [ROB_WIDTH-1:0] tag_rob
 );
+
 
   wire [`REG_WIDTH-1 : 0] caculate[`OPCODE_ALU_SIZE-1:0];
 
@@ -64,6 +70,7 @@ module alu #(
     if (rst_in) begin
       done_rs  <= 1'b0;
       done_rob <= 1'b0;
+      done_lsb <= 1'b0;
     end
   end
 
@@ -72,21 +79,27 @@ module alu #(
       if (cal_signal) begin
         done_rs <= 1'b1;
         done_rob <= 1'b1;
+        done_lsb <= 1'b1;
         result_rs <= caculate[opcode];
         result_rob <= caculate[opcode];
+        result_lsb <= caculate[opcode];
         tag_rs <= tag;
         tag_rob <= tag;
+        tag_lsb <= tag;
       end
     end
   end
 
-  always @(posedge clk_in) begin  // reset done signal, avoiding flush RS/ROB more than one time
+  always @(posedge clk_in) begin  // handle done signal, avoiding flush RS/ROB more than one time
     if (rdy_in) begin
       if (done_rs) begin
         done_rs <= 1'b0;
       end
       if (done_rob) begin
         done_rob <= 1'b0;
+      end
+      if (done_lsb) begin
+        done_lsb <= 1'b0;
       end
     end
   end

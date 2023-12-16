@@ -1,8 +1,155 @@
-module load_store_buffer(
+`define REG_WIDTH 32
+
+module load_store_buffer #(
+    parameter LSB_WIDTH = 4,
+    parameter LSB_SIZE  = 2 ** LSB_WIDTH,
+    parameter ROB_WIDTH = 4
+) (
     input wire clk_in,  // system clock signal
     input wire rst_in,  // reset signal
-    input wire rdy_in   // ready signal, pause cpu when low
+    input wire rdy_in,  // ready signal, pause cpu when low
 
+    // issued instruction
+    input wire issue_signal,  // 1 for issuing an instruction
+    input wire issue_wr,  // 1 for store, 0 for load
+    input wire [1:0] issue_len,
+    input wire [`REG_WIDTH-1:0] issue_addr,
+    input wire [`REG_WIDTH-1:0] issue_value,
+    input wire [ROB_WIDTH-1:0] issue_tag_addr,
+    input wire [ROB_WIDTH-1:0] issue_tag_data,
+    input wire [ROB_WIDTH-1:0] issue_tag_rd,
+    input wire issue_valid_addr,  // 1 for addr valid (tag is invalid)
+    input wire issue_valid_data,  // 1 for data valid (tag is invalid)
+
+    // send load/store task to memory controller
+    output reg mem_signal,  // 1 for sending load/store task
+    output reg mem_wr,  // 1 for write
+    output reg [1:0] mem_len,  // length(byte) of laod/store (1 byte, 2 bytes, 4 bytes)
+    output reg [`REG_WIDTH-1:0] mem_addr,  // load/store address
+    output reg [`REG_WIDTH-1:0] mem_dout,  // data for store
+    input wire [`REG_WIDTH-1:0] mem_din,  // data for load
+    input wire mem_done,  // 1 when done
+
+    // remove tag and set value from ALU
+    input wire alu_signal,  // 1 for ALU sending data
+    input wire [`REG_WIDTH-1:0] alu_value,
+    input wire [ROB_WIDTH-1:0] alu_tag,
+
+    // send load result to RS (fowrarding)
+    output reg rs_signal,  // 1 for sending load result
+    output reg [`REG_WIDTH-1:0] rs_value,
+    output reg [ROB_WIDTH-1:0] rs_tag,
+
+    // send load result to ROB
+    output reg rob_signal,  // 1 for sending load result
+    output reg [`REG_WIDTH-1:0] rob_value,
+    output reg [ROB_WIDTH-1:0] rob_tag,
+
+    output wire full
 );
+
+  //LSB lines
+  reg busy[LSB_SIZE-1:0];  // 1 for line busy
+  reg wr[LSB_SIZE-1:0];
+  reg [1:0] len[LSB_SIZE-1:0];
+  reg [`REG_WIDTH-1:0] address[LSB_SIZE-1:0];
+  reg [`REG_WIDTH-1:0] value[LSB_SIZE-1:0];
+  reg [ROB_WIDTH-1:0] tag_addr[LSB_SIZE-1:0];
+  reg [ROB_WIDTH-1:0] tag_value[LSB_SIZE-1:0];
+  reg [ROB_WIDTH-1:0] tag_rd[LSB_SIZE-1:0];
+  reg valid_addr[LSB_SIZE-1:0];
+  reg valid_value[LSB_SIZE-1:0];
+
+  //LSB status
+  reg status;  // 0 for free, 1 for busy
+  reg [LSB_WIDTH-1:0] front;
+  reg [LSB_WIDTH-1:0] rear;
+
+  assign full = ((rear + 1) == front);
+
+  integer i_reset;
+  always @(posedge clk_in) begin
+    if (rst_in) begin
+      front <= {LSB_WIDTH{1'b0}};
+      rear <= {LSB_WIDTH{1'b0}};
+      mem_signal <= 1'b0;
+      rs_signal <= 1'b0;
+      rob_signal <= 1'b0;
+      status <= 1'b0;
+      for (i_reset = 0; i_reset < LSB_SIZE; i_reset = i_reset + 1) begin
+        busy[i_reset] <= 1'b0;
+      end
+    end
+  end
+
+  always @(posedge clk_in) begin
+    if (rdy_in & issue_signal) begin  // push new instr to rear pos
+      busy[rear] <= 1'b1;
+      wr[rear] <= issue_wr;
+      len[rear] <= issue_len;
+      address[rear] <= issue_addr;
+      value[rear] <= issue_value;
+      tag_addr[rear] <= issue_tag_addr;
+      tag_value[rear] <= issue_tag_data;
+      tag_rd[rear] <= issue_tag_rd;
+      valid_addr[rear] <= issue_valid_addr;
+      valid_value[rear] <= issue_valid_data;
+      rear <= rear + 1;
+    end
+  end
+
+  always @(posedge clk_in) begin
+    if (rdy_in & ~status & busy[front] & valid_addr[front] & valid_value[front] ) begin  // do the load/store task at front pos
+      mem_signal <= 1'b1;
+      mem_wr <= wr[front];
+      mem_len <= len[front];
+      mem_addr <= address[front];
+      mem_dout <= value[front];
+      status <= 1'b1;
+    end
+  end
+
+  integer i_mem;
+  always @(posedge clk_in) begin
+    if (rdy_in & mem_done) begin  // handle the result of load/store
+      status <= 1'b0;
+      mem_signal <= 1'b0;  // end task
+      front <= front + 1;  // free line
+      busy[front] <= 1'b0;
+      if (wr[front]) begin  // send data&tag to RS&ROB, flush data&tag in LSB
+        for (i_mem = 0; i_mem < LSB_SIZE; i_mem = i_mem + 1) begin
+          if (busy[i_mem]) begin
+            if (~valid_addr[i_mem] & (tag_addr[i_mem] == tag_rd[front])) begin
+              valid_addr[i_mem] <= 1'b1;
+              address[i_mem] <= mem_din;
+            end
+            if (~valid_value[i_mem] & (tag_value[i_mem] == tag_rd[front])) begin
+              valid_value[i_mem]  <= 1'b1;
+              value[i_mem] <= mem_din;
+            end
+          end
+        end
+        rs_signal <= 1'b1;
+        rob_signal <= 1'b1;
+        rs_value <= mem_din;
+        rob_value <= mem_din;
+        rs_tag <= tag_rd[front];
+        rob_tag <= tag_rd[front];
+      end
+    end
+  end
+
+  always @(posedge clk_in) begin  // handle done signal, avoiding flush RS/ROB more than one time
+    if (rdy_in) begin
+      if (rs_signal) begin
+        rs_signal <= 1'b0;
+      end
+      if (rob_signal) begin
+        rob_signal <= 1'b0;
+      end
+    end
+  end
+
+
 
 endmodule
