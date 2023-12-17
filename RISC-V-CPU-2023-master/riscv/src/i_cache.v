@@ -14,6 +14,8 @@ module instr_cache #(
     input wire rst_in,  // reset signal
     input wire rdy_in,  // ready signal, pause cpu when low
 
+    input wire clear_signal,  // 1 for prediction error
+
     // with instruction-fetch
     input  wire                    fetch_signal,  // 1 for instruction fetch
     input  wire [`INSTR_WIDTH-1:0] fetch_addr,
@@ -50,6 +52,14 @@ module instr_cache #(
       for (i_reset = 0; i_reset < CACHE_SIZE; i_reset = i_reset + 1) begin
         valid[i_reset] <= 1'b0;
       end
+    end
+  end
+
+  always @(posedge clk_in) begin
+    if (rdy_in & clear_signal) begin // end the request of instruction fetch
+      status <= `FREE_STATUS;
+      fetch_done <= 1'b0;
+      mem_signal <= 1'b0;
     end
   end
 

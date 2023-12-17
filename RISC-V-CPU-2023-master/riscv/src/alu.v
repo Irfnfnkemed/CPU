@@ -24,6 +24,8 @@ module alu #(
     input wire rst_in,  // reset signal
     input wire rdy_in,  // ready signal, pause cpu when low
 
+    input wire clear_signal,  // 1 for prediction error
+
     //calculate data from RS
     input wire cal_signal,  // 1 for calulating
     input wire [`OPCODE_ALU_WIDTH-1:0] opcode,
@@ -67,7 +69,7 @@ module alu #(
   assign caculate[`JALR] = (lhs + rhs) & {{`REG_WIDTH - 1{1'b1}}, 1'b0};
 
   always @(posedge clk_in) begin  // reset alu status to free
-    if (rst_in) begin
+    if (rst_in | (rdy_in & clear_signal)) begin
       done_rs  <= 1'b0;
       done_rob <= 1'b0;
       done_lsb <= 1'b0;

@@ -15,6 +15,8 @@ module memory_controller (
     output reg         mem_wr,         // write/read signal (1 for write)
     input  wire        io_buffer_full, // 1 if uart buffer is full
 
+    input wire clear_signal,  // 1 for prediction error
+
     // with instruction-fetch (or i-cache)
     input  wire        instr_signal,  // 1 for instruction fetch
     input  wire [31:0] instr_a,       // instruction address
@@ -59,7 +61,7 @@ module memory_controller (
         `FREE_STATUS: begin
           instr_done <= 1'b0;
           lsb_done   <= 1'b0;
-          if (instr_signal) begin
+          if (instr_signal & ~clear_signal) begin  // if clearing, do not need to load 
             status <= `INSTR_FETCH_STATUS;
             stage  <= 4'b0000;
             mem_a  <= instr_a;
@@ -75,7 +77,7 @@ module memory_controller (
               mem_dout <= lsb_din[7:0];
               mem_a <= lsb_a;
               mem_wr <= 1'b1;
-            end else begin
+            end else if (~clear_signal) begin  // if clearing, do not need to load
               status <= `LSB_LOAD_STATUS;
               stage  <= 4'b0000;
               mem_a  <= lsb_a;
@@ -85,38 +87,48 @@ module memory_controller (
         end
         `INSTR_FETCH_STATUS: begin
           mem_wr <= 1'b0;
-          case (stage)  // begin at 1, for loading nead one cycle
-            1: instr_d[7:0] <= mem_din;
-            2: instr_d[15:8] <= mem_din;
-            3: instr_d[23:16] <= mem_din;
-            4: instr_d[31:24] <= mem_din;
-            5: instr_d[39:32] <= mem_din;
-            6: instr_d[47:40] <= mem_din;
-            7: instr_d[55:48] <= mem_din;
-            8: instr_d[63:56] <= mem_din;
-          endcase
-          if (stage == 8) begin  // finish fetch
+          if (clear_signal) begin  // don't need to load
             status <= `FREE_STATUS;
-            instr_done <= 1'd1;
+            instr_done <= 1'd0;
           end else begin
-            mem_a <= mem_a + 1;
-            stage <= stage + 1;
+            case (stage)  // begin at 1, for loading nead one cycle
+              1: instr_d[7:0] <= mem_din;
+              2: instr_d[15:8] <= mem_din;
+              3: instr_d[23:16] <= mem_din;
+              4: instr_d[31:24] <= mem_din;
+              5: instr_d[39:32] <= mem_din;
+              6: instr_d[47:40] <= mem_din;
+              7: instr_d[55:48] <= mem_din;
+              8: instr_d[63:56] <= mem_din;
+            endcase
+            if (stage == 8) begin  // finish fetch
+              status <= `FREE_STATUS;
+              instr_done <= 1'd1;
+            end else begin
+              mem_a <= mem_a + 1;
+              stage <= stage + 1;
+            end
           end
         end
         `LSB_LOAD_STATUS: begin
           mem_wr <= 1'b0;
-          case (stage)  // begin at 1, for loading nead one cycle
-            1: lsb_dout[7:0] <= mem_din;
-            2: lsb_dout[15:8] <= mem_din;
-            3: lsb_dout[23:16] <= mem_din;
-            4: lsb_dout[31:24] <= mem_din;
-          endcase
-          if (stage == lsb_len) begin  // finish
-            status   <= `FREE_STATUS;
-            lsb_done <= 1'd1;
+          if (clear_signal) begin  // don't need to load
+            status <= `FREE_STATUS;
+            lsb_done <= 1'd0;
           end else begin
-            mem_a <= mem_a + 1;
-            stage <= stage + 1;
+            case (stage)  // begin at 1, for loading nead one cycle
+              1: lsb_dout[7:0] <= mem_din;
+              2: lsb_dout[15:8] <= mem_din;
+              3: lsb_dout[23:16] <= mem_din;
+              4: lsb_dout[31:24] <= mem_din;
+            endcase
+            if (stage == lsb_len) begin  // finish
+              status   <= `FREE_STATUS;
+              lsb_done <= 1'd1;
+            end else begin
+              mem_a <= mem_a + 1;
+              stage <= stage + 1;
+            end
           end
         end
         `LSB_STORE_STATUS: begin

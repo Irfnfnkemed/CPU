@@ -9,6 +9,8 @@ module load_store_buffer #(
     input wire rst_in,  // reset signal
     input wire rdy_in,  // ready signal, pause cpu when low
 
+    input wire clear_signal,  // 1 for prediction error
+
     // issued instruction
     // for data, valid bit isn't necessary: 1 for load, 0 for store(shift to 1 when committing)
     input wire issue_signal,  // 1 for issuing an instruction
@@ -25,7 +27,6 @@ module load_store_buffer #(
     input wire [`REG_WIDTH-1:0] commit_addr,
     input wire [`REG_WIDTH-1:0] commit_value,
     input wire [ROB_WIDTH-1:0] commit_tag,
-
 
     // send load/store task to memory controller
     output reg mem_signal,  // 1 for sending load/store task
@@ -69,6 +70,7 @@ module load_store_buffer #(
   reg status;  // 0 for free, 1 for busy
   reg [LSB_WIDTH-1:0] front;
   reg [LSB_WIDTH-1:0] rear;
+  reg [LSB_WIDTH-1:0] last_store_commit;  // the index of last committed store task in LSB 
 
   assign full = ((rear + 1) == front);  // 1 for full
 
@@ -77,6 +79,7 @@ module load_store_buffer #(
     if (rst_in) begin
       front <= {LSB_WIDTH{1'b0}};
       rear <= {LSB_WIDTH{1'b0}};
+      last_store_commit <= {LSB_WIDTH{1'b0}};
       mem_signal <= 1'b0;
       rs_signal <= 1'b0;
       rob_signal <= 1'b0;
@@ -84,6 +87,23 @@ module load_store_buffer #(
       for (i_reset = 0; i_reset < LSB_SIZE; i_reset = i_reset + 1) begin
         busy[i_reset]  <= 1'b0;
         ready[i_reset] <= 1'b0;
+      end
+    end
+  end
+
+  integer i_clear;
+  always @(posedge clk_in) begin
+    if (rdy_in & clear_signal) begin
+      for (i_clear = 0; i_clear < LSB_SIZE; i_clear = i_clear + 1) begin
+        if(~(busy[i_clear] & wr[i_clear] & ready[i_clear]))begin // clear LSB, expect reafy store task
+          busy[i_clear]  <= 1'b0;
+          ready[i_clear] <= 1'b0;
+        end
+      end
+      if (busy[front] & wr[front] & ready[front]) begin
+        rear <= last_store_commit + 1;  // LSB has committed instr
+      end else begin
+        rear <= front;  // LSB is empty
       end
     end
   end
@@ -108,9 +128,10 @@ module load_store_buffer #(
       for (i_commit = 0; i_commit < LSB_SIZE; i_commit = i_commit + 1) begin
         if (busy[i_commit]) begin  // in fact, only update store line, because load line should be updated before
           if (~ready[i_alu] & (tag_addr[i_commit] == commit_tag)) begin
-            ready[i_alu]   <= 1'b1;
+            ready[i_alu] <= 1'b1;
             address[i_alu] <= commit_addr;
-            value[i_alu]   <= commit_value;
+            value[i_alu] <= commit_value;
+            last_store_commit <= i_alu;
           end
         end
       end

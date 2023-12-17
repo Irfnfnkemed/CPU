@@ -8,6 +8,8 @@ module register_file #(
     input wire rst_in,  // reset signal
     input wire rdy_in,  // ready signal, pause cpu when low
 
+    input wire clear_signal,  // 1 for prediction error
+
     // from instr latch (issue)
     input  wire                  instr_signal,  //1 for fetching registers
     input  wire [`REG_WIDTH-1:0] rs_id_1,
@@ -42,10 +44,10 @@ module register_file #(
 
   integer i_reset;
   always @(posedge clk_in) begin  // reset register file
-    if (rst_in) begin
+    if (rst_in | (rdy_in & clear_signal)) begin
       values[0] <= {`REG_WIDTH{1'b0}};
       tags[0]   <= {ROB_WIDTH{1'b0}};
-      valid[0]  <= 1'b1; // 0th reg is always 0
+      valid[0]  <= 1'b1;  // 0th reg is always 0
       for (i_reset = 1; i_reset < `REG_SIZE; i_reset = i_reset + 1) begin
         values[i_reset] <= {`REG_WIDTH{1'b0}};
         tags[i_reset]   <= {ROB_WIDTH{1'b0}};
@@ -64,7 +66,9 @@ module register_file #(
   integer i_commit;
   always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
     if (rdy_in & rob_commit_signal) begin
-      for (i_commit = 1; i_commit < `REG_SIZE; i_commit = i_commit + 1) begin // 0th reg cannot be modified
+      for (
+          i_commit = 1; i_commit < `REG_SIZE; i_commit = i_commit + 1
+      ) begin  // 0th reg cannot be modified
         if (~valid[i_commit] & (commit_rd_tag == tags[i_commit]) & ~(instr_signal & rd_id == i_commit)) begin
           valid[i_commit]  <= 1'b1;
           values[i_commit] <= commit_rd_value;

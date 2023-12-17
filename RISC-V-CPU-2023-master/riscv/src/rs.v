@@ -10,6 +10,8 @@ module reservation_station #(
     input wire rst_in,  // reset signal
     input wire rdy_in,  // ready signal, pause cpu when low
 
+    input wire clear_signal,  // 1 for prediction error
+
     //issued instr from instr latch (fetch value/tag from register file)
     input wire issue,  // 1 for issuing instruction 
     input wire [`OPCODE_ALU_WIDTH-1 : 0] opcode_issue,
@@ -50,7 +52,7 @@ module reservation_station #(
 );
 
   //RS lines
-  reg busy[RS_SIZE-1:0];  //1 for busy
+  reg busy[RS_SIZE-1:0];  // 1 for busy
   reg [`OPCODE_ALU_WIDTH-1 : 0] opcode[RS_SIZE-1:0];  // opcode for ALU calculation categories
   reg [`REG_WIDTH-1 : 0] rs_value_1[RS_SIZE-1:0];
   reg [`REG_WIDTH-1 : 0] rs_value_2[RS_SIZE-1:0];
@@ -86,16 +88,15 @@ module reservation_station #(
     assign free_pos = select_pos[1];
   endgenerate
 
-  integer i;
-
+  integer i_reset;
   always @(posedge clk_in) begin  // reset register file
-    if (rst_in) begin
-      for (i = 0; i < RS_SIZE; i = i + 1) begin
-        busy[i]       <= 1'b0;
-        rs_valid_1[i] <= 1'b0;
-        rs_valid_2[i] <= 1'b0;
-        busy_alu_1    <= 1'b0;
-        busy_alu_2    <= 1'b0;
+    if (rst_in | (rdy_in & clear_signal)) begin
+      for (i_reset = 0; i_reset < RS_SIZE; i_reset = i_reset + 1) begin
+        busy[i_reset]       <= 1'b0;
+        rs_valid_1[i_reset] <= 1'b0;
+        rs_valid_2[i_reset] <= 1'b0;
+        busy_alu_1          <= 1'b0;
+        busy_alu_2          <= 1'b0;
       end
     end
   end
@@ -118,14 +119,14 @@ module reservation_station #(
   always @(posedge clk_in) begin  // flush rs values according to the commitment
     if (rdy_in & commit) begin
       for (i_commit = 0; i_commit < RS_SIZE; i_commit = i_commit + 1) begin
-        if (busy[i]) begin
-          if (~rs_valid_1[i] && (rs_tag_1[i] == commit_tag)) begin
-            rs_valid_1[i] <= 1'b1;
-            rs_value_1[i] <= commit_value;
+        if (busy[i_commit]) begin
+          if (~rs_valid_1[i_commit] && (rs_tag_1[i_commit] == commit_tag)) begin
+            rs_valid_1[i_commit] <= 1'b1;
+            rs_value_1[i_commit] <= commit_value;
           end
-          if (~rs_valid_2[i] && (rs_tag_2[i] == commit_tag)) begin
-            rs_valid_2[i] <= 1'b1;
-            rs_value_2[i] <= commit_value;
+          if (~rs_valid_2[i_commit] && (rs_tag_2[i_commit] == commit_tag)) begin
+            rs_valid_2[i_commit] <= 1'b1;
+            rs_value_2[i_commit] <= commit_value;
           end
         end
       end
@@ -137,14 +138,14 @@ module reservation_station #(
     if (rdy_in & done_alu_1) begin
       busy_alu_1 <= 1'b0;  // reset alu to free status
       for (i_alu_1 = 0; i_alu_1 < RS_SIZE; i_alu_1 = i_alu_1 + 1) begin
-        if (busy[i]) begin
-          if (~rs_valid_1[i] && (rs_tag_1[i] == tag_alu_1)) begin
-            rs_valid_1[i] <= 1'b1;
-            rs_value_1[i] <= value_alu_1;
+        if (busy[i_alu_1]) begin
+          if (~rs_valid_1[i_alu_1] && (rs_tag_1[i_alu_1] == tag_alu_1)) begin
+            rs_valid_1[i_alu_1] <= 1'b1;
+            rs_value_1[i_alu_1] <= value_alu_1;
           end
-          if (~rs_valid_2[i] && (rs_tag_2[i] == tag_alu_1)) begin
-            rs_valid_2[i] <= 1'b1;
-            rs_value_2[i] <= value_alu_1;
+          if (~rs_valid_2[i_alu_1] && (rs_tag_2[i_alu_1] == tag_alu_1)) begin
+            rs_valid_2[i_alu_1] <= 1'b1;
+            rs_value_2[i_alu_1] <= value_alu_1;
           end
         end
       end
@@ -155,15 +156,15 @@ module reservation_station #(
   always @(posedge clk_in) begin  // flush rs values according to the ALU2 result
     if (rdy_in & done_alu_2) begin
       busy_alu_1 <= 1'b0;  // reset alu to free status
-      for (i_alu_1 = 0; i_alu_1 < RS_SIZE; i_alu_1 = i_alu_1 + 1) begin
-        if (busy[i]) begin
-          if (~rs_valid_1[i] && (rs_tag_1[i] == tag_alu_1)) begin
-            rs_valid_1[i] <= 1'b1;
-            rs_value_1[i] <= value_alu_1;
+      for (i_alu_2 = 0; i_alu_2 < RS_SIZE; i_alu_2 = i_alu_2 + 1) begin
+        if (busy[i_alu_2]) begin
+          if (~rs_valid_1[i_alu_2] && (rs_tag_1[i_alu_2] == tag_alu_2)) begin
+            rs_valid_1[i_alu_2] <= 1'b1;
+            rs_value_1[i_alu_2] <= value_alu_2;
           end
-          if (~rs_valid_2[i] && (rs_tag_2[i] == tag_alu_1)) begin
-            rs_valid_2[i] <= 1'b1;
-            rs_value_2[i] <= value_alu_1;
+          if (~rs_valid_2[i_alu_2] && (rs_tag_2[i_alu_2] == tag_alu_2)) begin
+            rs_valid_2[i_alu_2] <= 1'b1;
+            rs_value_2[i_alu_2] <= value_alu_2;
           end
         end
       end
@@ -174,21 +175,21 @@ module reservation_station #(
   always @(posedge clk_in) begin  // send valid instr to ALU when ALU is free, and free the RS line at the same time
     if (rdy_in) begin
       for (i_alu = 0; i_alu < RS_SIZE; i_alu = i_alu + 1) begin
-        if (rs_valid_1[i] & rs_valid_2[i]) begin
+        if (rs_valid_1[i_alu] & rs_valid_2[i_alu]) begin
           if (~busy_alu_1) begin  // calculate in ALU1
             busy_alu_1    = 1'b1; // block assignment, avoiding more than one lines sending data to ALU at the same time
-            busy[i]      <= 1'b0;
-            opcode_alu_1 <= opcode[i];
-            lhs_alu_1    <= rs_value_1[i];
-            rhs_alu_1    <= rs_valid_2[i];
-            rd_tag_alu_1 <= rd_tag[i];
+            busy[i_alu]  <= 1'b0;
+            opcode_alu_1 <= opcode[i_alu];
+            lhs_alu_1    <= rs_value_1[i_alu];
+            rhs_alu_1    <= rs_valid_2[i_alu];
+            rd_tag_alu_1 <= rd_tag[i_alu];
           end else if (~busy_alu_2) begin  // calculate in ALU2
             busy_alu_2    = 1'b1; // block assignment, avoiding more than one lines sending data to ALU at the same time
-            busy[i]      <= 1'b0;
-            opcode_alu_2 <= opcode[i];
-            lhs_alu_2    <= rs_value_1[i];
-            rhs_alu_2    <= rs_valid_2[i];
-            rd_tag_alu_2 <= rd_tag[i];
+            busy[i_alu]  <= 1'b0;
+            opcode_alu_2 <= opcode[i_alu];
+            lhs_alu_2    <= rs_value_1[i_alu];
+            rhs_alu_2    <= rs_valid_2[i_alu];
+            rd_tag_alu_2 <= rd_tag[i_alu];
           end
         end
       end
