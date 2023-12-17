@@ -43,11 +43,6 @@ module reservation_station #(
     input wire [ROB_WIDTH-1 : 0] tag_alu_1,
     input wire [ROB_WIDTH-1 : 0] tag_alu_2,
 
-    // commitment from ROB, flushing rs
-    input wire commit,  // 1 for committing
-    input wire [`REG_WIDTH-1 : 0] commit_value,
-    input wire [ROB_WIDTH-1 : 0] commit_tag,
-
     output wire full  // 1 for RS is full
 );
 
@@ -101,34 +96,32 @@ module reservation_station #(
     end
   end
 
-  always @(posedge clk_in) begin  // issue an instruction
+  always @(posedge clk_in) begin  // issue an instruction, noticting the forwarding of ALU results
     if (rdy_in & issue) begin
-      busy[free_pos]       <= 1'b1;
-      opcode[free_pos]     <= opcode_issue;
-      rs_value_1[free_pos] <= rs_issue_value_1;
-      rs_valid_2[free_pos] <= rs_issue_value_2;
-      rs_tag_1[free_pos]   <= rs_issue_tag_1;
-      rs_tag_2[free_pos]   <= rs_issue_tag_2;
-      rs_valid_1[free_pos] <= rs_issue_valid_1;
-      rs_valid_2[free_pos] <= rs_issue_valid_2;
-      rd_tag[free_pos]     <= rd_issue_tag;
-    end
-  end
-
-  integer i_commit;
-  always @(posedge clk_in) begin  // flush rs values according to the commitment
-    if (rdy_in & commit) begin
-      for (i_commit = 0; i_commit < RS_SIZE; i_commit = i_commit + 1) begin
-        if (busy[i_commit]) begin
-          if (~rs_valid_1[i_commit] && (rs_tag_1[i_commit] == commit_tag)) begin
-            rs_valid_1[i_commit] <= 1'b1;
-            rs_value_1[i_commit] <= commit_value;
-          end
-          if (~rs_valid_2[i_commit] && (rs_tag_2[i_commit] == commit_tag)) begin
-            rs_valid_2[i_commit] <= 1'b1;
-            rs_value_2[i_commit] <= commit_value;
-          end
-        end
+      busy[free_pos]   <= 1'b1;
+      opcode[free_pos] <= opcode_issue;
+      rd_tag[free_pos] <= rd_issue_tag;
+      if (done_alu_1 & (tag_alu_1 == rs_tag_1[free_pos])) begin  // forwarding
+        rs_value_1[free_pos] <= value_alu_1;
+        rs_valid_1[free_pos] <= 1'b1;
+      end else if (done_alu_2 & (tag_alu_2 == rs_tag_1[free_pos])) begin  // forwarding
+        rs_value_1[free_pos] <= value_alu_2;
+        rs_valid_1[free_pos] <= 1'b1;
+      end else begin
+        rs_value_1[free_pos] <= rs_issue_value_1;
+        rs_tag_1[free_pos]   <= rs_issue_tag_1;
+        rs_valid_1[free_pos] <= rs_issue_valid_1;
+      end
+      if (done_alu_1 & (tag_alu_1 == rs_tag_2[free_pos])) begin  // forwarding
+        rs_value_2[free_pos] <= value_alu_1;
+        rs_valid_2[free_pos] <= 1'b1;
+      end else if (done_alu_2 & (tag_alu_2 == rs_tag_2[free_pos])) begin  // forwarding
+        rs_value_2[free_pos] <= value_alu_2;
+        rs_valid_2[free_pos] <= 1'b1;
+      end else begin
+        rs_value_2[free_pos] <= rs_issue_value_2;
+        rs_tag_2[free_pos]   <= rs_issue_tag_2;
+        rs_valid_2[free_pos] <= rs_issue_valid_2;
       end
     end
   end
@@ -171,6 +164,7 @@ module reservation_station #(
     end
   end
 
+  // as tag&data are updated when ALU send back the result, updating when committing is unnecessary
   integer i_alu;
   always @(posedge clk_in) begin  // send valid instr to ALU when ALU is free, and free the RS line at the same time
     if (rdy_in) begin
