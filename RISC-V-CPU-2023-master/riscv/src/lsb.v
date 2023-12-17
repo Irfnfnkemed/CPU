@@ -94,16 +94,18 @@ module load_store_buffer #(
   integer i_clear;
   always @(posedge clk_in) begin
     if (rdy_in & clear_signal) begin
+      rs_signal <= 1'b0;
+      rob_signal <= 1'b0;
+      rear <= (busy[front] & wr[front] & ready[front]) ?(last_store_commit + 1):front; // whether LSB has committed instr or not
+      if (~(mem_signal & mem_wr)) begin // cancel the mem request excect store task 
+        mem_signal <= 1'b0;
+        status <= 1'b0;
+      end
       for (i_clear = 0; i_clear < LSB_SIZE; i_clear = i_clear + 1) begin
         if(~(busy[i_clear] & wr[i_clear] & ready[i_clear]))begin // clear LSB, expect reafy store task
           busy[i_clear]  <= 1'b0;
           ready[i_clear] <= 1'b0;
         end
-      end
-      if (busy[front] & wr[front] & ready[front]) begin
-        rear <= last_store_commit + 1;  // LSB has committed instr
-      end else begin
-        rear <= front;  // LSB is empty
       end
     end
   end
