@@ -24,8 +24,6 @@ module load_store_buffer #(
 
     // commited instruction from ROB (only for store)
     input wire commit_signal,  // 1 for committing a **store instruction** 
-    input wire [`REG_WIDTH-1:0] commit_addr,
-    input wire [`REG_WIDTH-1:0] commit_value,
     input wire [ROB_WIDTH-1:0] commit_tag,
 
     // send load/store task to memory controller
@@ -97,7 +95,7 @@ module load_store_buffer #(
       rs_signal <= 1'b0;
       rob_signal <= 1'b0;
       rear <= (busy[front] & wr[front] & ready[front]) ?(last_store_commit + 1):front; // whether LSB has committed instr or not
-      if (~(mem_signal & mem_wr)) begin // cancel the mem request excect store task 
+      if (~(mem_signal & mem_wr)) begin  // cancel the mem request excect store task 
         mem_signal <= 1'b0;
         status <= 1'b0;
       end
@@ -125,14 +123,12 @@ module load_store_buffer #(
   end
 
   integer i_commit;
-  always @(posedge clk_in) begin  // update load line according to the data from ALU 
+  always @(posedge clk_in) begin
     if (rdy_in & commit_signal) begin
       for (i_commit = 0; i_commit < LSB_SIZE; i_commit = i_commit + 1) begin
-        if (busy[i_commit]) begin  // in fact, only update store line, because load line should be updated before
+        if (busy[i_commit]) begin  // only set store line to ready, because data should be updated before
           if (~ready[i_alu] & (tag_addr[i_commit] == commit_tag)) begin
             ready[i_alu] <= 1'b1;
-            address[i_alu] <= commit_addr;
-            value[i_alu] <= commit_value;
             last_store_commit <= i_alu;
           end
         end
@@ -182,10 +178,13 @@ module load_store_buffer #(
   always @(posedge clk_in) begin  // update load line according to the data from ALU 
     if (rdy_in & alu_signal) begin
       for (i_alu = 0; i_alu < LSB_SIZE; i_alu = i_alu + 1) begin
-        if (busy[i_alu]) begin  // only update load line
-          if (~ready[i_alu] & ~wr[i_alu] & (tag_addr[i_alu] == alu_tag)) begin
-            ready[i_alu]   <= 1'b1;
+        if (busy[i_alu]) begin  // update lines
+          if (~ready[i_alu] & (tag_addr[i_alu] == alu_tag)) begin
+            ready[i_alu]   <= 1'b1 & ~wr[i_alu]; // if load, set ready status; if store, set not ready status(ready when committing)
             address[i_alu] <= alu_value;
+          end
+          if (~ready[i_alu] & wr[i_alu] & (tag_value[i_alu] == alu_tag)) begin // update value only for store line
+            value[i_alu] <= alu_value;
           end
         end
       end
