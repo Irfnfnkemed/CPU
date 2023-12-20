@@ -33,20 +33,10 @@ module alu #(
     input wire [`REG_WIDTH-1 : 0] rhs,
     input wire [ROB_WIDTH-1:0] tag,
 
-    //return result to RS
-    output reg done_rs,
-    output reg [`REG_WIDTH-1 : 0] result_rs,
-    output reg [ROB_WIDTH-1:0] tag_rs,
-
-    //send result to LSB
-    output reg done_lsb,
-    output reg [`REG_WIDTH-1 : 0] result_lsb,
-    output reg [ROB_WIDTH-1:0] tag_lsb,
-
-    //send result to ROB
-    output reg done_rob,
-    output reg [`REG_WIDTH-1 : 0] result_rob,
-    output reg [ROB_WIDTH-1:0] tag_rob
+    //return result to RS, LSB and ROB
+    output reg done_result,
+    output reg [`REG_WIDTH-1 : 0] value_result,
+    output reg [ROB_WIDTH-1:0] tag_result
 );
 
 
@@ -70,41 +60,20 @@ module alu #(
 
   always @(posedge clk_in) begin  // reset alu status to free
     if (rst_in | (rdy_in & clear_signal)) begin
-      done_rs  <= 1'b0;
-      done_rob <= 1'b0;
-      done_lsb <= 1'b0;
+      done_result <= 1'b0;
     end
   end
 
   always @(posedge clk_in) begin  // send the result
     if (rdy_in) begin
       if (cal_signal) begin
-        done_rs <= 1'b1;
-        done_rob <= 1'b1;
-        done_lsb <= 1'b1;
-        result_rs <= caculate[opcode];
-        result_rob <= caculate[opcode];
-        result_lsb <= caculate[opcode];
-        tag_rs <= tag;
-        tag_rob <= tag;
-        tag_lsb <= tag;
+        done_result  <= 1'b1;
+        value_result <= caculate[opcode];
+        tag_result   <= tag;
+      end else begin
+        done_result <= 1'b0;  // handle done signal, avoiding flush RS/LSB/ROB more than one time
       end
     end
   end
-
-  always @(posedge clk_in) begin  // handle done signal, avoiding flush RS/ROB more than one time
-    if (rdy_in) begin
-      if (done_rs) begin
-        done_rs <= 1'b0;
-      end
-      if (done_rob) begin
-        done_rob <= 1'b0;
-      end
-      if (done_lsb) begin
-        done_lsb <= 1'b0;
-      end
-    end
-  end
-
 
 endmodule

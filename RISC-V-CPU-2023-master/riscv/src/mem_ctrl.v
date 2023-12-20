@@ -48,7 +48,7 @@ module memory_controller (
 
   always @(posedge clk_in) begin  // pause CPU, set mem_wr to READ to avoid writing wrongly
     if (~rdy_in) begin
-      mem_a <= 32'hFFFFFFFF;
+      mem_a <= 32'h00000000;
       mem_wr <= 1'b0;
       instr_done <= 1'b0;
       lsb_done <= 1'b0;
@@ -68,8 +68,8 @@ module memory_controller (
             mem_wr <= 1'b0;
           end else if (lsb_signal) begin
             if (lsb_wr) begin
-              status <= (~io_buffer_full && lsb_len == 1) ? `FREE_STATUS : `LSB_STORE_STATUS;// if only need to store one byte, set to LSB_STORE_STATUS is not necessary
-              if (~io_buffer_full) begin
+              status <= (~(lsb_a[17] & lsb_a[16] & io_buffer_full) && lsb_len == 1) ? `FREE_STATUS : `LSB_STORE_STATUS;// if only need to store one byte, set to LSB_STORE_STATUS is not necessary
+              if (~(lsb_a[17] & lsb_a[16] & io_buffer_full)) begin
                 stage <= 4'b0001;  // store first byte in this cycle
               end else begin
                 stage <= 4'b0000;  // do not store in this cycle
@@ -113,7 +113,7 @@ module memory_controller (
         `LSB_LOAD_STATUS: begin
           mem_wr <= 1'b0;
           if (clear_signal) begin  // don't need to load
-            status <= `FREE_STATUS;
+            status   <= `FREE_STATUS;
             lsb_done <= 1'd0;
           end else begin
             case (stage)  // begin at 1, for loading nead one cycle
@@ -133,7 +133,7 @@ module memory_controller (
         end
         `LSB_STORE_STATUS: begin
           mem_wr <= 1'b1;
-          if (~io_buffer_full) begin
+          if (~(lsb_a[17] & lsb_a[16] & io_buffer_full)) begin
             case (stage)
               0: mem_dout <= lsb_din[7:0];
               1: mem_dout <= lsb_din[15:8];

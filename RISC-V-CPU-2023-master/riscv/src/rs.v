@@ -12,7 +12,7 @@ module reservation_station #(
 
     input wire clear_signal,  // 1 for prediction error
 
-    //issued instr from instr latch (fetch value/tag from register file)
+    //issued instr from instr fetch (fetch value/tag from RF and ROB)
     input wire issue,  // 1 for issuing instruction 
     input wire [`OPCODE_ALU_WIDTH-1 : 0] opcode_issue,
     input wire [`REG_WIDTH-1 : 0] rs_issue_value_1,

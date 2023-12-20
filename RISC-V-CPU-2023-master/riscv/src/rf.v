@@ -10,7 +10,7 @@ module register_file #(
 
     input wire clear_signal,  // 1 for prediction error
 
-    // from instr latch (issue)
+    // from instr-fetch (issue)
     input  wire                  instr_signal,  //1 for fetching registers
     input  wire [`REG_WIDTH-1:0] rs_id_1,
     input  wire [`REG_WIDTH-1:0] rs_id_2,

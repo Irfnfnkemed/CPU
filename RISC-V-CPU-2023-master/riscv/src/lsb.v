@@ -53,7 +53,7 @@ module load_store_buffer #(
     output wire full
 );
 
-  //LSB lines
+  // LSB lines
   // tag_value is unnecessary, because it's useless for loading and value will be updated without tag when committing for store 
   reg busy[LSB_SIZE-1:0];  // 1 for line busy
   reg ready[LSB_SIZE-1:0];  // 1 for ready
@@ -149,27 +149,32 @@ module load_store_buffer #(
 
   integer i_mem;
   always @(posedge clk_in) begin
-    if (rdy_in & mem_done) begin  // handle the result of load/store
-      status <= 1'b0;
-      mem_signal <= 1'b0;  // end task
-      front <= front + 1;  // free line
-      busy[front] <= 1'b0;
-      ready[front] <= 1'b0;
-      if (wr[front]) begin  // send data&tag to RS&ROB, flush data&tag in LSB
-        for (i_mem = 0; i_mem < LSB_SIZE; i_mem = i_mem + 1) begin
-          if (busy[i_mem]) begin  // only update load line, for store line, update when ROB commit
-            if (~ready[i_mem] & ~wr[i_mem] & (tag_addr[i_mem] == tag_rd[front])) begin
-              ready[i_mem]   <= 1'b1;
-              address[i_mem] <= mem_din;
+    if (rdy_in) begin  // handle the result of load/store
+      if (mem_done) begin
+        status <= 1'b0;
+        mem_signal <= 1'b0;  // end task
+        front <= front + 1;  // free line
+        busy[front] <= 1'b0;
+        ready[front] <= 1'b0;
+        if (wr[front]) begin  // send data&tag to RS&ROB, flush data&tag in LSB
+          for (i_mem = 0; i_mem < LSB_SIZE; i_mem = i_mem + 1) begin
+            if (busy[i_mem]) begin  // only update load line, for store line, update when ROB commit
+              if (~ready[i_mem] & ~wr[i_mem] & (tag_addr[i_mem] == tag_rd[front])) begin
+                ready[i_mem]   <= 1'b1;
+                address[i_mem] <= mem_din;
+              end
             end
           end
+            <= 1'b1;
+          rob_signal <= 1'b1;
+          rs_value <= mem_din;
+          rob_value <= mem_din;
+          rs_tag <= tag_rd[front];
+          rob_tag <= tag_rd[front];
         end
-        rs_signal <= 1'b1;
-        rob_signal <= 1'b1;
-        rs_value <= mem_din;
-        rob_value <= mem_din;
-        rs_tag <= tag_rd[front];
-        rob_tag <= tag_rd[front];
+      end else begin  // handle done signal, avoiding flush RS/ROB more than one time
+        rs_signal  <= 1'b0;
+        rob_signal <= 1'b0;
       end
     end
   end
@@ -190,17 +195,5 @@ module load_store_buffer #(
       end
     end
   end
-
-  always @(posedge clk_in) begin  // handle done signal, avoiding flush RS/ROB more than one time
-    if (rdy_in) begin
-      if (rs_signal) begin
-        rs_signal <= 1'b0;
-      end
-      if (rob_signal) begin
-        rob_signal <= 1'b0;
-      end
-    end
-  end
-
 
 endmodule
