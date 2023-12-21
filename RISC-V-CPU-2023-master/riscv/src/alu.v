@@ -1,4 +1,3 @@
-`define REG_WIDTH 32
 `define OPCODE_ALU_WIDTH 4
 `define OPCODE_ALU_SIZE 16
 `define AND 4'd1
@@ -29,18 +28,18 @@ module alu #(
     //calculate data from RS
     input wire cal_signal,  // 1 for calulating
     input wire [`OPCODE_ALU_WIDTH-1:0] opcode,
-    input wire [`REG_WIDTH-1 : 0] lhs,
-    input wire [`REG_WIDTH-1 : 0] rhs,
+    input wire [31:0] lhs,
+    input wire [31:0] rhs,
     input wire [ROB_WIDTH-1:0] tag,
 
     //return result to RS, LSB and ROB
     output reg done_result,
-    output reg [`REG_WIDTH-1 : 0] value_result,
+    output reg [31:0] value_result,
     output reg [ROB_WIDTH-1:0] tag_result
 );
 
 
-  wire [`REG_WIDTH-1 : 0] caculate[`OPCODE_ALU_SIZE-1:0];
+  wire [31:0] caculate[`OPCODE_ALU_SIZE-1:0];
 
   assign caculate[`AND]  = lhs & rhs;
   assign caculate[`OR]   = lhs | rhs;
@@ -50,13 +49,13 @@ module alu #(
   assign caculate[`SRL]  = lhs >> rhs[4:0];
   assign caculate[`SRA]  = lhs >>> rhs[4:0];
   assign caculate[`SLL]  = lhs << rhs[4:0];
-  assign caculate[`LT]   = {`REG_WIDTH{$signed(lhs) < $signed(rhs)}};
-  assign caculate[`LTU]  = {`REG_WIDTH{lhs < rhs}};
-  assign caculate[`EQ]   = {`REG_WIDTH{lhs == rhs}};
-  assign caculate[`NE]   = {`REG_WIDTH{lhs != rhs}};
-  assign caculate[`GE]   = {`REG_WIDTH{$signed(lhs) >= $signed(rhs)}};
-  assign caculate[`GEU]  = {`REG_WIDTH{lhs >= rhs}};
-  assign caculate[`JALR] = (lhs + rhs) & {{`REG_WIDTH - 1{1'b1}}, 1'b0};
+  assign caculate[`LT]   = {32{$signed(lhs) < $signed(rhs)}};
+  assign caculate[`LTU]  = {32{lhs < rhs}};
+  assign caculate[`EQ]   = {32{lhs == rhs}};
+  assign caculate[`NE]   = {32{lhs != rhs}};
+  assign caculate[`GE]   = {32{$signed(lhs) >= $signed(rhs)}};
+  assign caculate[`GEU]  = {32{lhs >= rhs}};
+  assign caculate[`JALR] = (lhs + rhs) & {{31{1'b1}}, 1'b0};
 
   always @(posedge clk_in) begin  // reset alu status to free
     if (rst_in | (rdy_in & clear_signal)) begin
