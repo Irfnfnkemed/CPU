@@ -1,5 +1,3 @@
-`define REG_WIDTH 32
-
 module load_store_buffer #(
     parameter LSB_WIDTH = 4,
     parameter LSB_SIZE  = 2 ** LSB_WIDTH,
@@ -16,39 +14,35 @@ module load_store_buffer #(
     input wire issue_signal,  // 1 for issuing an instruction
     input wire issue_wr,  // 1 for store, 0 for load
     input wire [1:0] issue_len,
-    input wire [`REG_WIDTH-1:0] issue_addr,
-    input wire [`REG_WIDTH-1:0] issue_value,
+    input wire [31:0] issue_addr,
+    input wire [31:0] issue_value,
     input wire [ROB_WIDTH-1:0] issue_tag_addr,
     input wire [ROB_WIDTH-1:0] issue_tag_rd,
     input wire issue_valid_addr,  // 1 for addr valid (tag is invalid)
 
     // commited instruction from ROB (only for store)
     input wire commit_signal,  // 1 for committing a **store instruction** 
+    input wire [31:0] commit_value,  // the value of store (addr is updated before)
     input wire [ROB_WIDTH-1:0] commit_tag,
 
     // send load/store task to memory controller
     output reg mem_signal,  // 1 for sending load/store task
     output reg mem_wr,  // 1 for write
     output reg [1:0] mem_len,  // length(byte) of laod/store (1 byte, 2 bytes, 4 bytes)
-    output reg [`REG_WIDTH-1:0] mem_addr,  // load/store address
-    output reg [`REG_WIDTH-1:0] mem_dout,  // data for store
-    input wire [`REG_WIDTH-1:0] mem_din,  // data for load
+    output reg [31:0] mem_addr,  // load/store address
+    output reg [31:0] mem_dout,  // data for store
+    input wire [31:0] mem_din,  // data for load
     input wire mem_done,  // 1 when done
 
     // remove tag and set value from ALU
     input wire alu_signal,  // 1 for ALU sending data
-    input wire [`REG_WIDTH-1:0] alu_value,
+    input wire [31:0] alu_value,
     input wire [ROB_WIDTH-1:0] alu_tag,
 
-    // send load result to RS (fowrarding)
-    output reg rs_signal,  // 1 for sending load result
-    output reg [`REG_WIDTH-1:0] rs_value,
-    output reg [ROB_WIDTH-1:0] rs_tag,
-
-    // send load result to ROB
-    output reg rob_signal,  // 1 for sending load result
-    output reg [`REG_WIDTH-1:0] rob_value,
-    output reg [ROB_WIDTH-1:0] rob_tag,
+    // send load result to RS&ROB (fowrarding)
+    output reg done_signal,  // 1 for sending load result
+    output reg [31:0] done_value,
+    output reg [ROB_WIDTH-1:0] done_tag,
 
     output wire full
 );
@@ -59,8 +53,8 @@ module load_store_buffer #(
   reg ready[LSB_SIZE-1:0];  // 1 for ready
   reg wr[LSB_SIZE-1:0];
   reg [1:0] len[LSB_SIZE-1:0];
-  reg [`REG_WIDTH-1:0] address[LSB_SIZE-1:0];
-  reg [`REG_WIDTH-1:0] value[LSB_SIZE-1:0];
+  reg [31:0] address[LSB_SIZE-1:0];
+  reg [31:0] value[LSB_SIZE-1:0];
   reg [ROB_WIDTH-1:0] tag_addr[LSB_SIZE-1:0];
   reg [ROB_WIDTH-1:0] tag_rd[LSB_SIZE-1:0];
 
@@ -79,8 +73,7 @@ module load_store_buffer #(
       rear <= {LSB_WIDTH{1'b0}};
       last_store_commit <= {LSB_WIDTH{1'b0}};
       mem_signal <= 1'b0;
-      rs_signal <= 1'b0;
-      rob_signal <= 1'b0;
+      done_signal <= 1'b0;
       status <= 1'b0;
       for (i_reset = 0; i_reset < LSB_SIZE; i_reset = i_reset + 1) begin
         busy[i_reset]  <= 1'b0;
@@ -92,9 +85,8 @@ module load_store_buffer #(
   integer i_clear;
   always @(posedge clk_in) begin
     if (rdy_in & clear_signal) begin
-      rs_signal <= 1'b0;
-      rob_signal <= 1'b0;
-      rear <= (busy[front] & wr[front] & ready[front]) ?(last_store_commit + 1):front; // whether LSB has committed instr or not
+      done_signal <= 1'b0;
+      rear <= (busy[front] & wr[front] & ready[front]) ? (last_store_commit + 1) : front; // whether LSB has committed instr or not
       if (~(mem_signal & mem_wr)) begin  // cancel the mem request excect store task 
         mem_signal <= 1'b0;
         status <= 1'b0;
@@ -126,9 +118,10 @@ module load_store_buffer #(
   always @(posedge clk_in) begin
     if (rdy_in & commit_signal) begin
       for (i_commit = 0; i_commit < LSB_SIZE; i_commit = i_commit + 1) begin
-        if (busy[i_commit]) begin  // only set store line to ready, because data should be updated before
-          if (~ready[i_alu] & (tag_addr[i_commit] == commit_tag)) begin
+        if (busy[i_commit]) begin  // only update the value and set store line to ready, because data should be updated before
+          if (~ready[i_alu] & (tag_rd[i_commit] == commit_tag)) begin
             ready[i_alu] <= 1'b1;
+            value[i_alu] <= commit_value;
             last_store_commit <= i_alu;
           end
         end
@@ -158,23 +151,19 @@ module load_store_buffer #(
         ready[front] <= 1'b0;
         if (wr[front]) begin  // send data&tag to RS&ROB, flush data&tag in LSB
           for (i_mem = 0; i_mem < LSB_SIZE; i_mem = i_mem + 1) begin
-            if (busy[i_mem]) begin  // only update load line, for store line, update when ROB commit
-              if (~ready[i_mem] & ~wr[i_mem] & (tag_addr[i_mem] == tag_rd[front])) begin
-                ready[i_mem]   <= 1'b1;
+            if (busy[i_mem]) begin  // update LSB (addr)
+              if (~ready[i_mem] & (tag_addr[i_mem] == tag_rd[front])) begin
+                ready[i_mem]   <= 1'b1 & ~wr[i_mem]; // if load, set ready status; if store, set not ready status(ready when committing)
                 address[i_mem] <= mem_din;
               end
             end
           end
-            <= 1'b1;
-          rob_signal <= 1'b1;
-          rs_value <= mem_din;
-          rob_value <= mem_din;
-          rs_tag <= tag_rd[front];
-          rob_tag <= tag_rd[front];
+          done_signal <= 1'b1;
+          done_value <= mem_din;
+          done_tag <= tag_rd[front];
         end
       end else begin  // handle done signal, avoiding flush RS/ROB more than one time
-        rs_signal  <= 1'b0;
-        rob_signal <= 1'b0;
+        done_signal <= 1'b0;
       end
     end
   end
@@ -187,9 +176,6 @@ module load_store_buffer #(
           if (~ready[i_alu] & (tag_addr[i_alu] == alu_tag)) begin
             ready[i_alu]   <= 1'b1 & ~wr[i_alu]; // if load, set ready status; if store, set not ready status(ready when committing)
             address[i_alu] <= alu_value;
-          end
-          if (~ready[i_alu] & wr[i_alu] & (tag_value[i_alu] == alu_tag)) begin // update value only for store line
-            value[i_alu] <= alu_value;
           end
         end
       end

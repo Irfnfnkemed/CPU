@@ -34,6 +34,7 @@ module reorder_buffer #(
 
     // commit to LSB (only for STORE_INSTR)
     output reg lsb_done,  // 1 for committing to RF
+    output reg [31:0] lsb_value,
     output reg [ROB_WIDTH-1:0] lsb_tag,
 
     output wire full,  // 1 when ROB is full
@@ -106,6 +107,7 @@ module reorder_buffer #(
           end
           `STORE_INSTR: begin
             lsb_done <= 1'b1;
+            lsb_value <= value[front_rob];
             lsb_tag  <= front_rob;
           end
           `BRANCH_INSTR: begin
