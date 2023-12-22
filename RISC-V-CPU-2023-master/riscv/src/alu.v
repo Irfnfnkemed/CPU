@@ -1,5 +1,4 @@
-`define OPCODE_ALU_WIDTH 4
-`define OPCODE_ALU_SIZE 16
+`define NOP 4'd0
 `define AND 4'd1
 `define OR 4'd2
 `define XOR 4'd3
@@ -27,7 +26,7 @@ module alu #(
 
     //calculate data from RS
     input wire cal_signal,  // 1 for calulating
-    input wire [`OPCODE_ALU_WIDTH-1:0] opcode,
+    input wire [3:0] opcode,
     input wire [31:0] lhs,
     input wire [31:0] rhs,
     input wire [ROB_WIDTH-1:0] tag,
@@ -39,7 +38,7 @@ module alu #(
 );
 
 
-  wire [31:0] caculate[`OPCODE_ALU_SIZE-1:0];
+  wire [31:0] caculate[15:0];
 
   assign caculate[`AND]  = lhs & rhs;
   assign caculate[`OR]   = lhs | rhs;

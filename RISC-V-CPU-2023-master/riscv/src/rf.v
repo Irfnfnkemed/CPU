@@ -9,16 +9,18 @@ module register_file #(
 
     // from instr-fetch (issue)
     input wire instr_signal,  //1 for fetching registers
-    input wire [31:0] rs_id_1,
-    input wire [31:0] rs_id_2,
+    input wire [4:0] rs_id_1,
+    input wire [4:0] rs_id_2,
+    input wire [4:0] rd_id,
+    input wire [ROB_WIDTH-1:0] rd_tag,  // overwrite the tag of rd
     output wire [31:0] rs_value_1,
     output wire [31:0] rs_value_2,
     output wire [ROB_WIDTH-1:0] rs_tag_1,
     output wire [ROB_WIDTH-1:0] rs_tag_2,
     output wire rs_valid_1,
     output wire rs_valid_2,
-    input wire [31:0] rd_id,
-    input wire [ROB_WIDTH-1:0] rd_tag,  // overwrite the tag of rd
+    output wire [31:0] value_x1,  // the value of x1 reg, for predicting JALR
+
 
     // from rob (commit)
     input wire rob_commit_signal,  //1 for committing
@@ -38,6 +40,7 @@ module register_file #(
   assign rs_tag_2 = tags[rs_id_2];
   assign rs_valid_1 = sign_1 | (~sign_1 & valid[rs_id_1]);
   assign rs_valid_2 = sign_2 | (~sign_2 & valid[rs_id_2]);
+  assign value_x1 = values[1];
 
   integer i_reset;
   always @(posedge clk_in) begin  // reset register file
@@ -55,8 +58,8 @@ module register_file #(
 
   always @(posedge clk_in) begin  // overwrite the tag of rd (if rd is 0th reg, ignore)
     if (rdy_in & instr_signal & (rd_id != 0)) begin
-      tags[rd_id]  <= rd_tag;
       valid[rd_id] <= 1'b0;
+      tags[rd_id]  <= rd_tag;
     end
   end
 
@@ -64,7 +67,7 @@ module register_file #(
   always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
     if (rdy_in & rob_commit_signal) begin  // 0th reg cannot be modified
       for (i_commit = 1; i_commit < 32; i_commit = i_commit + 1) begin
-        if (~valid[i_commit] & (commit_rd_tag == tags[i_commit]) & ~(instr_signal & rd_id == i_commit)) begin
+        if (~valid[i_commit] & (commit_rd_tag == tags[i_commit]) & ~(instr_signal & (rd_id == i_commit))) begin
           valid[i_commit]  <= 1'b1;
           values[i_commit] <= commit_rd_value;
         end

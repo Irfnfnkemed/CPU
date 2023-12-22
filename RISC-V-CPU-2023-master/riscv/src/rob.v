@@ -22,10 +22,15 @@ module reorder_buffer #(
     input wire [31:0] issue_value,
     input wire [31:0] issue_pc_prediction,  // for JALR (PC+4 is in issue_value)
 
-    //result from ALU
+    // result from ALU
     input wire alu_done,  // 1 for sending ALU result
     input wire [31:0] alu_value,
     input wire [ROB_WIDTH-1:0] alu_tag,
+
+    // result from LSB(load)
+    input wire lsb_load_done,  // 1 for sending LSB load result
+    input wire [31:0] lsb_load_value,
+    input wire [ROB_WIDTH-1:0] lsb_load_tag,
 
     // commit to RF (for REG_INSTR and JALR_INSTR)
     output reg reg_done,  // 1 for committing to RF
@@ -37,8 +42,20 @@ module reorder_buffer #(
     output reg [31:0] lsb_value,
     output reg [ROB_WIDTH-1:0] lsb_tag,
 
-    output wire full,  // 1 when ROB is full
-    output wire [ROB_WIDTH-1:0] rob_tag  // index of new line in ROB
+    // send jump status to predictor when committing br-instr
+    output reg predictor_signal,  // 1 for committing br-instr
+    output reg predictor_branch,  // 1 for jumping, 0 for continuing
+
+    // with instr-fetch issue, send the information of rs-reg in combinational logic
+    output wire [ROB_WIDTH-1:0] rob_tag,  // index of new line in ROB
+    output wire [31:0] rob_value_rs1,
+    output wire [31:0] rob_value_rs2,
+    output wire rob_ready_rs1,
+    output wire rob_ready_rs2,
+    input wire [ROB_WIDTH-1:0] rob_tag_rs1,
+    input wire [ROB_WIDTH-1:0] rob_tag_rs2,
+
+    output wire full  // 1 when ROB is full
 );
 
   // ROB line
@@ -59,6 +76,10 @@ module reorder_buffer #(
 
   assign full = ((rear_rob == front_rob) & busy[rear_rob]) | ((rear_jalr == front_jalr) & busy_jalr[rear_jalr]);
   assign rob_tag = rear_rob;
+  assign rob_value_rs1 = value[rob_tag_rs1];
+  assign rob_value_rs2 = value[rob_tag_rs2];
+  assign rob_ready_rs1 = busy[rob_tag_rs1] & ready[rob_tag_rs1];
+  assign rob_ready_rs2 = busy[rob_tag_rs2] & ready[rob_tag_rs2];
 
   integer i_reset;
   always @(posedge clk_in) begin
@@ -101,20 +122,31 @@ module reorder_buffer #(
         front_rob <= front_rob + 1;
         case (opcode[front_rob])
           `REG_INSTR: begin  // commit to RF
-            reg_done  <= 1'b1;
+            reg_done <= 1'b1;
             reg_value <= value[front_rob];
-            reg_tag   <= front_rob;
+            reg_tag <= front_rob;
+            lsb_done <= 1'b0;
+            clear_signal <= 1'b0;
+            predictor_signal <= 1'b0;
           end
           `STORE_INSTR: begin
+            reg_done <= 1'b0;
             lsb_done <= 1'b1;
-            lsb_value <= value[front_rob];
-            lsb_tag  <= front_rob;
+            lsb_tag <= front_rob;
+            clear_signal <= 1'b0;
+            predictor_signal <= 1'b0;
           end
           `BRANCH_INSTR: begin
+            reg_done <= 1'b0;
+            lsb_done <= 1'b0;
             if (value[front_rob][1] ^ value[front_rob][0]) begin  // predict wrongly
               clear_signal <= 1'b1;
               correct_pc   <= value[front_rob] & 32'hFFFFFFFC;  // set last two bits to 0
+            end else begin
+              clear_signal <= 1'b0;
             end
+            predictor_signal <= 1'b1;
+            predictor_branch <= value[front_rob][0];
           end
           `JALR_INSTR: begin
             reg_done <= 1'b1;
@@ -125,7 +157,11 @@ module reorder_buffer #(
             if (~(value[front_rob] == pc_prediction_jalr[front_jalr])) begin  // predict wrongly
               clear_signal <= 1'b1;
               correct_pc   <= value[front_rob];
+            end else begin
+              clear_signal <= 1'b0;
             end
+            lsb_done <= 1'b0;
+            predictor_signal <= 1'b0;
           end
         endcase
       end
@@ -133,6 +169,7 @@ module reorder_buffer #(
       reg_done <= 1'b0;
       lsb_done <= 1'b0;
       clear_signal <= 1'b0;
+      predictor_signal <= 1'b0;
     end
   end
 
@@ -143,6 +180,17 @@ module reorder_buffer #(
         value[alu_tag][0] <= alu_value[0]; // the bool result is place in the highest bit                                                                        
       end else begin
         value[alu_tag] <= alu_value;
+      end
+    end
+  end
+
+  always @(posedge clk_in) begin  // update value from LSB
+    if (rdy_in & lsb_load_done) begin
+      ready[lsb_load_tag] <= 1'b1;
+      if (opcode[lsb_load_tag] == `BRANCH_INSTR) begin
+        value[lsb_load_tag][0] <= lsb_load_value[0]; // the bool result is place in the highest bit                                                                        
+      end else begin
+        value[lsb_load_tag] <= lsb_load_value;
       end
     end
   end

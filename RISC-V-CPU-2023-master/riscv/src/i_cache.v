@@ -62,7 +62,7 @@ module instr_cache #(
   end
 
   always @(posedge clk_in) begin
-    if (rdy_in) begin
+    if (rdy_in & ~clear_signal) begin
       case (status)
         `FREE_STATUS: begin
           if (fetch_signal & ~fetch_done) begin  // not hit in cache, send to mem-controller

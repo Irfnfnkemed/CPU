@@ -24,13 +24,14 @@ module memory_controller (
     output reg         instr_done,    // 1 when done
 
     // with LSB
-    input  wire        lsb_signal,  // 1 for load/store task
-    input  wire        lsb_wr,      // 1 for write
-    input  wire [ 1:0] lsb_len,     // length(byte) of laod/store (1 byte, 2 bytes, 4 bytes)
-    input  wire [31:0] lsb_a,       // load/store address
-    input  wire [31:0] lsb_din,     // data for store
-    output reg  [31:0] lsb_dout,    // data for load
-    output reg         lsb_done     // 1 when done
+    input wire lsb_signal,  // 1 for load/store task
+    input wire lsb_wr,  // 1 for write
+    input wire lsb_signed,  // 1 for signed load
+    input wire [1:0] lsb_len,  // length(byte) of laod/store (00:1 byte, 01:2 bytes, 11:4 bytes)
+    input wire [31:0] lsb_a,  // load/store address
+    input wire [31:0] lsb_din,  // data for store
+    output reg [31:0] lsb_dout,  // data for load
+    output reg lsb_done  // 1 when done
 );
 
   reg [1:0] status;
@@ -68,7 +69,7 @@ module memory_controller (
             mem_wr <= 1'b0;
           end else if (lsb_signal) begin
             if (lsb_wr) begin
-              status <= (~(lsb_a[17] & lsb_a[16] & io_buffer_full) && lsb_len == 1) ? `FREE_STATUS : `LSB_STORE_STATUS;// if only need to store one byte, set to LSB_STORE_STATUS is not necessary
+              status <= (~(lsb_a[17] & lsb_a[16] & io_buffer_full) && lsb_len == 0) ? `FREE_STATUS : `LSB_STORE_STATUS;// if only need to store one byte, set to LSB_STORE_STATUS is not necessary
               if (~(lsb_a[17] & lsb_a[16] & io_buffer_full)) begin
                 stage <= 4'b0001;  // store first byte in this cycle
               end else begin
@@ -122,9 +123,17 @@ module memory_controller (
               3: lsb_dout[23:16] <= mem_din;
               4: lsb_dout[31:24] <= mem_din;
             endcase
-            if (stage == lsb_len) begin  // finish
+            if (stage == lsb_len + 1) begin  // finish
               status   <= `FREE_STATUS;
               lsb_done <= 1'd1;
+              case (lsb_len)  // signed load
+                2'b00: begin
+                  lsb_dout[31:8] <= lsb_signed ? {24{mem_din[7]}} : {24{1'b0}};
+                end
+                2'b01: begin
+                  lsb_dout[31:16] <= lsb_signed ? {16{mem_din[7]}} : {24{1'b0}};
+                end
+              endcase
             end else begin
               mem_a <= mem_a + 1;
               stage <= stage + 1;
@@ -141,7 +150,7 @@ module memory_controller (
               3: mem_dout <= lsb_din[31:24];
             endcase
             mem_a <= lsb_a + stage;
-            if (stage == lsb_len - 1) begin  // finish
+            if (stage == lsb_len) begin  // finish
               status   <= `FREE_STATUS;
               lsb_done <= 1'd1;
             end else begin
