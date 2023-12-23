@@ -1,3 +1,5 @@
 {
-    "digital-ide.welcome.show": false
+    "digital-ide.welcome.show": false,
+    "digital-ide.function.lsp.linter.vlog.diagnostor": "default",
+    "digital-ide.dont-show-again.propose.issue": true
 }

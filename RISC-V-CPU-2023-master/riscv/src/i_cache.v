@@ -1,3 +1,6 @@
+`ifndef ICACHE
+`define ICACHE
+
 `define FREE_STATUS 1'b0
 `define MEM_FETCH_STATUS 1'b1
 
@@ -85,3 +88,4 @@ module instr_cache #(
   end
 
 endmodule
+`endif

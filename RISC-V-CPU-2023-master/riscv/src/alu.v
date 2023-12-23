@@ -1,3 +1,6 @@
+`ifndef ALU
+`define ALU
+
 `define NOP 4'd0
 `define AND 4'd1
 `define OR 4'd2
@@ -75,3 +78,4 @@ module alu #(
   end
 
 endmodule
+`endif

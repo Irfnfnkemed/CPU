@@ -1,3 +1,6 @@
+`ifndef MEMCRTL
+`define MEMCRTL
+
 `define FREE_STATUS 2'b00
 `define INSTR_FETCH_STATUS 2'b01
 `define LSB_LOAD_STATUS 2'b10
@@ -163,3 +166,4 @@ module memory_controller (
   end
 
 endmodule
+`endif

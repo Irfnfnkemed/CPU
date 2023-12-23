@@ -1,3 +1,6 @@
+`ifndef RF
+`define RF
+
 module register_file #(
     parameter ROB_WIDTH = 4
 ) (
@@ -76,3 +79,4 @@ module register_file #(
   end
 
 endmodule
+`endif

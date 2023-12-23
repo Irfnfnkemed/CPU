@@ -1,3 +1,6 @@
+`ifndef LSB
+`define LSB
+
 module load_store_buffer #(
     parameter LSB_WIDTH = 4,
     parameter LSB_SIZE  = 2 ** LSB_WIDTH,
@@ -39,9 +42,12 @@ module load_store_buffer #(
     input wire mem_done,  // 1 when done
 
     // remove tag and set value from ALU
-    input wire alu_signal,  // 1 for ALU sending data
-    input wire [31:0] alu_value,
-    input wire [ROB_WIDTH-1:0] alu_tag,
+    input wire alu1_signal,  // 1 for ALU sending data
+    input wire alu2_signal,  // 1 for ALU sending data
+    input wire [31:0] alu1_value,
+    input wire [31:0] alu2_value,
+    input wire [ROB_WIDTH-1:0] alu1_tag,
+    input wire [ROB_WIDTH-1:0] alu2_tag,
 
     // send load result to RS&ROB (fowrarding)
     output reg done_signal,  // 1 for sending load result
@@ -181,19 +187,38 @@ module load_store_buffer #(
     end
   end
 
-  integer i_alu;
+  integer i_alu1;
   always @(posedge clk_in) begin  // update load line according to the data from ALU 
-    if (rdy_in & alu_signal) begin
-      for (i_alu = 0; i_alu < LSB_SIZE; i_alu = i_alu + 1) begin
-        if (busy[i_alu]) begin  // update lines
-          if (~valid_addr[i_alu] & (tag_addr[i_alu] == alu_tag)) begin
-            valid_addr[i_alu] <= 1'b1;
-            ready[i_alu] <= 1'b1 & ~wr[i_alu]; // if load, set ready status; if store, set not ready status(ready when committing)
-            address[i_alu] <= alu_value;
+    if (rdy_in & alu1_signal) begin
+      for (i_alu1 = 0; i_alu1 < LSB_SIZE; i_alu1 = i_alu1 + 1) begin
+        if (busy[i_alu1]) begin  // update lines
+          if (~valid_addr[i_alu1] & (tag_addr[i_alu1] == alu1_tag)) begin
+            valid_addr[i_alu1] <= 1'b1;
+            ready[i_alu1] <= 1'b1 & ~wr[i_alu1]; // if load, set ready status; if store, set not ready status(ready when committing)
+            address[i_alu1] <= alu1_value;
           end
-          if (~valid_value[i_alu] & wr[i_alu] & (tag_value[i_alu] == alu_tag)) begin // update value (for store task)
-            valid_value[i_alu] <= 1'b1;
-            value[i_alu] <= alu_value;
+          if (~valid_value[i_alu1] & wr[i_alu1] & (tag_value[i_alu1] == alu1_tag)) begin // update value (for store task)
+            valid_value[i_alu1] <= 1'b1;
+            value[i_alu1] <= alu1_value;
+          end
+        end
+      end
+    end
+  end
+
+  integer i_alu2;
+  always @(posedge clk_in) begin  // update load line according to the data from ALU 
+    if (rdy_in & alu2_signal) begin
+      for (i_alu2 = 0; i_alu2 < LSB_SIZE; i_alu2 = i_alu2 + 1) begin
+        if (busy[i_alu2]) begin  // update lines
+          if (~valid_addr[i_alu2] & (tag_addr[i_alu2] == alu2_tag)) begin
+            valid_addr[i_alu2] <= 1'b1;
+            ready[i_alu2] <= 1'b1 & ~wr[i_alu2]; // if load, set ready status; if store, set not ready status(ready when committing)
+            address[i_alu2] <= alu2_value;
+          end
+          if (~valid_value[i_alu2] & wr[i_alu2] & (tag_value[i_alu2] == alu2_tag)) begin // update value (for store task)
+            valid_value[i_alu2] <= 1'b1;
+            value[i_alu2] <= alu2_value;
           end
         end
       end
@@ -201,3 +226,4 @@ module load_store_buffer #(
   end
 
 endmodule
+`endif

@@ -1,3 +1,6 @@
+`ifndef PRED
+`define PRED
+
 module saturation_counter (
     input wire clk_in,  // system clock signal
     input wire rst_in,  // reset signal
@@ -37,7 +40,7 @@ module predictor #(
     input wire rdy_in,  // ready signal, pause cpu when low
     input wire transition_signal,  // 1 for status transition
     input wire branch,  // 1 for jumping, 0 for continuing
-    input wire [LOCAL_WIDTH - 1: 0] instr_addr,  // 10 bits in instruction address for selecting counter group
+    input wire [LOCAL_WIDTH-1: 0] instr_addr,  // 10 bits in instruction address for selecting counter group
     output wire prediction  // 1 for jumping, 0 for continuing
 );
 
@@ -77,3 +80,4 @@ module predictor #(
   assign prediction = prediction_select[instr_addr];
 
 endmodule
+`endif

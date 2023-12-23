@@ -1,3 +1,6 @@
+`ifndef ROB
+`define ROB
+
 `define REG_INSTR 2'b00
 `define STORE_INSTR 2'b01
 `define BRANCH_INSTR 2'b01
@@ -23,9 +26,12 @@ module reorder_buffer #(
     input wire [31:0] issue_pc_prediction,  // for JALR (PC+4 is in issue_value)
 
     // result from ALU
-    input wire alu_done,  // 1 for sending ALU result
-    input wire [31:0] alu_value,
-    input wire [ROB_WIDTH-1:0] alu_tag,
+    input wire alu1_done,  // 1 for sending ALU result
+    input wire alu2_done,  // 1 for sending ALU result
+    input wire [31:0] alu1_value,
+    input wire [31:0] alu2_value,
+    input wire [ROB_WIDTH-1:0] alu1_tag,
+    input wire [ROB_WIDTH-1:0] alu2_tag,
 
     // result from LSB(load)
     input wire lsb_load_done,  // 1 for sending LSB load result
@@ -39,7 +45,6 @@ module reorder_buffer #(
 
     // commit to LSB (only for STORE_INSTR)
     output reg lsb_done,  // 1 for committing to RF
-    output reg [31:0] lsb_value,
     output reg [ROB_WIDTH-1:0] lsb_tag,
 
     // send jump status to predictor when committing br-instr
@@ -173,13 +178,24 @@ module reorder_buffer #(
     end
   end
 
-  always @(posedge clk_in) begin  // update value from ALU
-    if (rdy_in & alu_done) begin
-      ready[alu_tag] <= 1'b1;
-      if (opcode[alu_tag] == `BRANCH_INSTR) begin
-        value[alu_tag][0] <= alu_value[0]; // the bool result is place in the highest bit                                                                        
+  always @(posedge clk_in) begin  // update value from ALU1
+    if (rdy_in & alu1_done) begin
+      ready[alu1_tag] <= 1'b1;
+      if (opcode[alu1_tag] == `BRANCH_INSTR) begin
+        value[alu1_tag][0] <= alu1_value[0]; // the bool result is place in the highest bit                                                                        
       end else begin
-        value[alu_tag] <= alu_value;
+        value[alu1_tag] <= alu1_value;
+      end
+    end
+  end
+
+    always @(posedge clk_in) begin  // update value from ALU2
+    if (rdy_in & alu2_done) begin
+      ready[alu2_tag] <= 1'b1;
+      if (opcode[alu2_tag] == `BRANCH_INSTR) begin
+        value[alu2_tag][0] <= alu2_value[0]; // the bool result is place in the highest bit                                                                        
+      end else begin
+        value[alu2_tag] <= alu2_value;
       end
     end
   end
@@ -196,3 +212,4 @@ module reorder_buffer #(
   end
 
 endmodule
+`endif

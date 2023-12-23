@@ -1,3 +1,6 @@
+`ifndef IF
+`define IF
+
 `define ROB_REG_INSTR 2'b00
 `define ROB_STORE_INSTR 2'b01
 `define ROB_BRANCH_INSTR 2'b01
@@ -116,7 +119,7 @@ module instr_fetch #(
   assign rob_tag_rs1 = rf_tag_rs1;
   assign rob_tag_rs2 = rf_tag_rs2;
 
-  assign predict_addr = pc;
+  assign predict_addr = pc[LOCAL_WIDTH+1:2];
 
   // the value and validation of rs-reg according to RF and ROB
   assign value_rs1 = rf_valid_rs1 ? rf_value_rs1 : rob_value_rs1;
@@ -311,7 +314,7 @@ module instr_fetch #(
                 rs_opcode <= `ALU_XOR;
               end
               3'b101: begin
-                rs_opcode <= instr_fetch[30] ? `ALU_SRA : `ALU_SRL;
+                rs_opcode <= fetch_instr[30] ? `ALU_SRA : `ALU_SRL;
               end
               3'b110: begin
                 rs_opcode <= `ALU_OR;
@@ -358,7 +361,7 @@ module instr_fetch #(
                 rs_opcode <= `ALU_SLL;
               end
               3'b101: begin
-                rs_opcode <= instr_fetch[30] ? `ALU_SRA : `ALU_SRL;
+                rs_opcode <= fetch_instr[30] ? `ALU_SRA : `ALU_SRL;
               end
             endcase
             lsb_issue_signal <= 1'b0;
@@ -367,9 +370,10 @@ module instr_fetch #(
       end
     end else begin
       rob_issue_signal <= 1'b0;
-      rs_issue_signal <= 1'b0;
+      rs_issue_signal  <= 1'b0;
       lsb_issue_signal <= 1'b0;
     end
   end
 
 endmodule
+`endif

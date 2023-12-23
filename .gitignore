@@ -2,6 +2,7 @@ riscv/testspace/*
 
 *.o
 *.vcd
-a.out
+*.out
+.vscode/
 
 !.keep
