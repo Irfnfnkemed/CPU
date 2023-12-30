@@ -1,6 +1,3 @@
-`ifndef ALU
-`define ALU
-
 `define NOP 4'd0
 `define AND 4'd1
 `define OR 4'd2
@@ -41,23 +38,23 @@ module alu #(
 );
 
 
-  wire [31:0] caculate[15:0];
+  wire [31:0] calculate[15:0];
 
-  assign caculate[`AND]  = lhs & rhs;
-  assign caculate[`OR]   = lhs | rhs;
-  assign caculate[`XOR]  = lhs ^ rhs;
-  assign caculate[`ADD]  = lhs + rhs;
-  assign caculate[`SUB]  = lhs - rhs;
-  assign caculate[`SRL]  = lhs >> rhs[4:0];
-  assign caculate[`SRA]  = lhs >>> rhs[4:0];
-  assign caculate[`SLL]  = lhs << rhs[4:0];
-  assign caculate[`LT]   = {32{$signed(lhs) < $signed(rhs)}};
-  assign caculate[`LTU]  = {32{lhs < rhs}};
-  assign caculate[`EQ]   = {32{lhs == rhs}};
-  assign caculate[`NE]   = {32{lhs != rhs}};
-  assign caculate[`GE]   = {32{$signed(lhs) >= $signed(rhs)}};
-  assign caculate[`GEU]  = {32{lhs >= rhs}};
-  assign caculate[`JALR] = (lhs + rhs) & {{31{1'b1}}, 1'b0};
+  assign calculate[`AND]  = lhs & rhs;
+  assign calculate[`OR]   = lhs | rhs;
+  assign calculate[`XOR]  = lhs ^ rhs;
+  assign calculate[`ADD]  = lhs + rhs;
+  assign calculate[`SUB]  = lhs - rhs;
+  assign calculate[`SRL]  = lhs >> rhs[4:0];
+  assign calculate[`SRA]  = lhs >>> rhs[4:0];
+  assign calculate[`SLL]  = lhs << rhs[4:0];
+  assign calculate[`LT]   = {32{$signed(lhs) < $signed(rhs)}};
+  assign calculate[`LTU]  = {32{lhs < rhs}};
+  assign calculate[`EQ]   = {32{lhs == rhs}};
+  assign calculate[`NE]   = {32{lhs != rhs}};
+  assign calculate[`GE]   = {32{$signed(lhs) >= $signed(rhs)}};
+  assign calculate[`GEU]  = {32{lhs >= rhs}};
+  assign calculate[`JALR] = (lhs + rhs) & {{31{1'b1}}, 1'b0};
 
   always @(posedge clk_in) begin  // reset alu status to free
     if (rst_in | (rdy_in & clear_signal)) begin
@@ -66,10 +63,10 @@ module alu #(
   end
 
   always @(posedge clk_in) begin  // send the result
-    if (rdy_in) begin
-      if (cal_signal) begin
+    if (~rst_in & rdy_in) begin
+      if (cal_signal & ~done_result) begin // don't calculate one task for more than one time, because it won't do continuous calculation
         done_result  <= 1'b1;
-        value_result <= caculate[opcode];
+        value_result <= calculate[opcode];
         tag_result   <= tag;
       end else begin
         done_result <= 1'b0;  // handle done signal, avoiding flush RS/LSB/ROB more than one time
@@ -78,4 +75,3 @@ module alu #(
   end
 
 endmodule
-`endif

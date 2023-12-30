@@ -1,15 +1,15 @@
 // RISCV32I CPU top module
 // port modification allowed for debugging purposes
 
-`include "alu.v"
-`include "i_cache.v"
-`include "i_fetch.v"
-`include "lsb.v"
-`include "mem_ctrl.v"
-`include "predictor.v"
-`include "rf.v"
-`include "rob.v"
-`include "rs.v"
+// `include "alu.v"
+// `include "i_cache.v"
+// `include "i_fetch.v"
+// `include "lsb.v"
+// `include "mem_ctrl.v"
+// `include "predictor.v"
+// `include "rf.v"
+// `include "rob.v"
+// `include "rs.v"
 
 module cpu (
     input wire clk_in,  // system clock signal
@@ -79,6 +79,7 @@ module cpu (
   wire                   if_rob_value_ready;
   wire [            1:0] if_rob_opcode;
   wire [           31:0] if_rob_value;
+  wire [            4:0] if_rob_rd_id;
   wire [           31:0] if_rob_pc_prediction;
   wire                   if_rob_full;
 
@@ -117,10 +118,70 @@ module cpu (
   // reorder_buffer --> all the modules
   wire                   rob_clear_signal;
 
+  // reservation_station <--> alu1 
+  wire                   rs_alu1_busy;
+  wire [            3:0] rs_alu1_opcode;
+  wire [           31:0] rs_alu1_lhs;
+  wire [           31:0] rs_alu1_rhs;
+  wire [  ROB_WIDTH-1:0] rs_alu1_tag_rd;
+
+  // alu1 --> reservation_station & load_store_buffer & reorder_buffer
+  wire                   alu1_done_result;
+  wire [           31:0] alu1_value_result;
+  wire [  ROB_WIDTH-1:0] alu1_tag_result;
+
+  // reservation_station <--> alu2 
+  wire                   rs_alu2_busy;
+  wire [            3:0] rs_alu2_opcode;
+  wire [           31:0] rs_alu2_lhs;
+  wire [           31:0] rs_alu2_rhs;
+  wire [  ROB_WIDTH-1:0] rs_alu2_tag_rd;
+
+  // alu2 --> reservation_station & load_store_buffer & reorder_buffer
+  wire                   alu2_done_result;
+  wire [           31:0] alu2_value_result;
+  wire [  ROB_WIDTH-1:0] alu2_tag_result;
+
+  // load_store_buffer --> reservation_station & reorder_buffer
+  wire                   lsb_done_signal;
+  wire [           31:0] lsb_done_value;
+  wire [  ROB_WIDTH-1:0] lsb_done_tag;
+
+  // reorder_buffer <--> load_store_buffer
+  wire                   rob_lsb_done;
+  wire [  ROB_WIDTH-1:0] rob_lsb_tag;
+
+  // reorder_buffer <--> reservation_station
+  wire                   rs_done;
+  wire [           31:0] rs_value;
+  wire [  ROB_WIDTH-1:0] rs_tag;
+
+  // mem_ctrl <--> i_cache
+  wire                   memctrl_icache_signal;
+  wire [           31:0] memctrl_icache_addr;
+  wire [           63:0] memctrl_icache_data;
+  wire                   memctrl_icache_done;
+
+  // mem_ctrl <--> load_store_buffer
+  wire                   memctrl_lsb_signal;
+  wire                   memctrl_lsb_wr;
+  wire                   memctrl_lsb_signed;
+  wire [            1:0] memctrl_lsb_len;
+  wire [           31:0] memctrl_lsb_addr;
+  wire [           31:0] memctrl_lsb_din;
+  wire [           31:0] memctrl_lsb_dout;
+  wire                   memctrl_lsb_done;
+
+  // reorder_buffer <--> register_file
+  wire                   rob_rf_done;
+  wire [           31:0] rob_rf_value;
+  wire [            4:0] rob_rf_id;
+  wire [  ROB_WIDTH-1:0] rob_rf_tag;
 
 
-
-
+  // reorder_buffer <--> predictor
+  wire                   rob_pred_signal;
+  wire                   rob_pred_branch;
 
   instr_fetch #(
       .ROB_WIDTH  (ROB_WIDTH),
@@ -170,6 +231,7 @@ module cpu (
       .rob_value_ready  (if_rob_value_ready),
       .rob_opcode       (if_rob_opcode),
       .rob_value        (if_rob_value),
+      .rob_rd_id        (if_rob_rd_id),
       .rob_pc_prediction(if_rob_pc_prediction),
       .lsb_issue_signal (if_lsb_issue_signal),
       .lsb_wr           (if_lsb_wr),
@@ -187,19 +249,6 @@ module cpu (
       .correct_pc       (if_rob_correct_pc)
   );
 
-
-  // reservation_station <--> alu1 
-  wire                 rs_alu1_busy;
-  wire [          3:0] rs_alu1_opcode;
-  wire [         31:0] rs_alu1_lhs;
-  wire [         31:0] rs_alu1_rhs;
-  wire [ROB_WIDTH-1:0] rs_alu1_tag_rd;
-
-  // alu1 --> reservation_station & load_store_buffer & reorder_buffer
-  wire                 alu1_done_result;
-  wire [         31:0] alu1_value_result;
-  wire [ROB_WIDTH-1:0] alu1_tag_result;
-
   alu #(
       .ROB_WIDTH(ROB_WIDTH)
   ) u_alu1 (
@@ -216,18 +265,6 @@ module cpu (
       .value_result(alu1_value_result),
       .tag_result  (alu1_tag_result)
   );
-
-  // reservation_station <--> alu2 
-  wire                 rs_alu2_busy;
-  wire [          3:0] rs_alu2_opcode;
-  wire [         31:0] rs_alu2_lhs;
-  wire [         31:0] rs_alu2_rhs;
-  wire [ROB_WIDTH-1:0] rs_alu2_tag_rd;
-
-  // alu2 --> reservation_station & load_store_buffer & reorder_buffer
-  wire                 alu2_done_result;
-  wire [         31:0] alu2_value_result;
-  wire [ROB_WIDTH-1:0] alu2_tag_result;
 
   alu #(
       .ROB_WIDTH(ROB_WIDTH)
@@ -265,16 +302,6 @@ module cpu (
       .mem_done    (memctrl_icache_done),
       .mem_data    (memctrl_icache_data)
   );
-
-  // load_store_buffer --> reservation_station & reorder_buffer
-  wire                 lsb_done_signal;
-  wire [         31:0] lsb_done_value;
-  wire [ROB_WIDTH-1:0] lsb_done_tag;
-
-
-  // reorder_buffer <--> load_store_buffer
-  wire                 rob_lsb_done;
-  wire [ROB_WIDTH-1:0] rob_lsb_tag;
 
   load_store_buffer #(
       .LSB_WIDTH(LSB_WIDTH),
@@ -318,22 +345,6 @@ module cpu (
       .done_tag         (lsb_done_tag),
       .full             (if_lsb_full)
   );
-
-  // mem_ctrl <--> i_cache
-  wire        memctrl_icache_signal;
-  wire [31:0] memctrl_icache_addr;
-  wire [63:0] memctrl_icache_data;
-  wire        memctrl_icache_done;
-
-  // mem_ctrl <--> load_store_buffer
-  wire        memctrl_lsb_signal;
-  wire        memctrl_lsb_wr;
-  wire        memctrl_lsb_signed;
-  wire [ 1:0] memctrl_lsb_len;
-  wire [31:0] memctrl_lsb_addr;
-  wire [31:0] memctrl_lsb_din;
-  wire [31:0] memctrl_lsb_dout;
-  wire        memctrl_lsb_done;
 
   memory_controller u_memory_controller (
       .clk_in        (clk_in),
@@ -395,20 +406,9 @@ module cpu (
       .value_x1         (if_rf_value_x1),
       .rob_commit_signal(rob_rf_done),
       .commit_rd_value  (rob_rf_value),
+      .commit_rd_id     (rob_rf_id),
       .commit_rd_tag    (rob_rf_tag)
   );
-
-  // reorder_buffer <--> register_file
-  wire                 rob_rf_done;
-  wire [         31:0] rob_rf_value;
-  wire [ROB_WIDTH-1:0] rob_rf_tag;
-
-
-  // reorder_buffer <--> predictor
-  wire                 rob_pred_signal;
-  wire                 rob_pred_branch;
-
-
 
   reorder_buffer #(
       .ROB_WIDTH      (ROB_WIDTH),
@@ -424,6 +424,7 @@ module cpu (
       .issue_opcode       (if_rob_opcode),
       .issue_value_ready  (if_rob_value_ready),
       .issue_value        (if_rob_value),
+      .issue_rd_id        (if_rob_rd_id),
       .issue_pc_prediction(if_rob_pc_prediction),
       .alu1_done          (alu1_done_result),
       .alu2_done          (alu2_done_result),
@@ -436,9 +437,13 @@ module cpu (
       .lsb_load_tag       (lsb_done_tag),
       .reg_done           (rob_rf_done),
       .reg_value          (rob_rf_value),
+      .reg_id             (rob_rf_id),
       .reg_tag            (rob_rf_tag),
       .lsb_done           (rob_lsb_done),
       .lsb_tag            (rob_lsb_tag),
+      .rs_done            (rs_done),
+      .rs_value           (rs_value),
+      .rs_tag             (rs_tag),
       .predictor_signal   (rob_pred_signal),
       .predictor_branch   (rob_pred_branch),
       .rob_tag            (if_rob_tag),
@@ -460,6 +465,7 @@ module cpu (
       .clk_in          (clk_in),
       .rst_in          (rst_in),
       .rdy_in          (rdy_in),
+      .clear_signal    (rob_clear_signal),
       .issue           (if_rs_issue_signal),
       .opcode_issue    (if_rs_opcode),
       .rs_issue_value_1(if_rs_value_rs1),
@@ -488,9 +494,11 @@ module cpu (
       .done_lsb        (lsb_done_signal),
       .value_lsb       (lsb_done_value),
       .tag_lsb         (lsb_done_tag),
+      .done_commit     (rs_done),
+      .value_commit    (rs_value),
+      .tag_commit      (rs_tag),
       .full            (if_rs_full)
   );
-
 
 endmodule
 

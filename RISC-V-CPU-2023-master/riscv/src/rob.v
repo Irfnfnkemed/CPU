@@ -3,13 +3,14 @@
 
 `define REG_INSTR 2'b00
 `define STORE_INSTR 2'b01
-`define BRANCH_INSTR 2'b01
+`define BRANCH_INSTR 2'b10
 `define JALR_INSTR 2'b11
 
 module reorder_buffer #(
     parameter ROB_WIDTH = 4,
     parameter ROB_SIZE = 2 ** ROB_WIDTH,
-    parameter JALR_QUEUE_SIZE = 4
+    parameter JALR_QUEUE_WIDTH = 2,
+    parameter JALR_QUEUE_SIZE = 2 ** JALR_QUEUE_WIDTH
 ) (
     input wire clk_in,  // system clock signal
     input wire rst_in,  // reset signal
@@ -23,6 +24,7 @@ module reorder_buffer #(
     input wire [1:0] issue_opcode,
     input wire issue_value_ready,  // 1 for ready value
     input wire [31:0] issue_value,
+    input wire [4:0] issue_rd_id,
     input wire [31:0] issue_pc_prediction,  // for JALR (PC+4 is in issue_value)
 
     // result from ALU
@@ -41,11 +43,17 @@ module reorder_buffer #(
     // commit to RF (for REG_INSTR and JALR_INSTR)
     output reg reg_done,  // 1 for committing to RF
     output reg [31:0] reg_value,
+    output reg [4:0] reg_id,
     output reg [ROB_WIDTH-1:0] reg_tag,
 
     // commit to LSB (only for STORE_INSTR)
     output reg lsb_done,  // 1 for committing to RF
     output reg [ROB_WIDTH-1:0] lsb_tag,
+
+    // commit to RS (for REG_INSTR, that not issued to RS more precisely)
+    output reg rs_done,  // 1 for committing to RS
+    output reg [31:0] rs_value,
+    output reg [ROB_WIDTH-1:0] rs_tag,
 
     // send jump status to predictor when committing br-instr
     output reg predictor_signal,  // 1 for committing br-instr
@@ -69,6 +77,7 @@ module reorder_buffer #(
   reg ready[ROB_SIZE-1:0];  // 1 for ready
   reg [1:0] opcode[ROB_SIZE-1:0];  // the category of instruction
   reg [31:0] value[ROB_SIZE-1:0];
+  reg [4:0] rd_id[ROB_SIZE-1:0];  // the rd-reg id of instruction
   reg [ROB_WIDTH-1:0] front_rob;
   reg [ROB_WIDTH-1:0] rear_rob;
 
@@ -76,10 +85,15 @@ module reorder_buffer #(
   reg busy_jalr[JALR_QUEUE_SIZE-1:0];  // 1 for busy
   reg [31:0] pc_next_jalr[JALR_QUEUE_SIZE-1:0];  // PC+4
   reg [31:0] pc_prediction_jalr[JALR_QUEUE_SIZE-1:0];  // prediction PC
-  reg [ROB_WIDTH-1:0] front_jalr;
-  reg [ROB_WIDTH-1:0] rear_jalr;
+  reg [JALR_QUEUE_WIDTH-1:0] front_jalr;
+  reg [JALR_QUEUE_WIDTH-1:0] rear_jalr;
 
-  assign full = ((rear_rob == front_rob) & busy[rear_rob]) | ((rear_jalr == front_jalr) & busy_jalr[rear_jalr]);
+  wire [ROB_WIDTH-1:0] rear_rob_next = rear_rob + 1;
+  wire [ROB_WIDTH-1:0] rear_jalr_next = rear_jalr + 1;
+
+  assign rob_full = ((rear_rob_next == front_rob) & issue_signal) | ((rear_rob == front_rob) & busy[rear_rob]);
+  assign jalr_full =  ((rear_jalr_next == front_jalr) & issue_signal & (issue_opcode == `JALR_INSTR)) | ((rear_jalr == front_jalr) & busy_jalr[rear_jalr]);
+  assign full = rob_full | jalr_full;
   assign rob_tag = rear_rob;
   assign rob_value_rs1 = value[rob_tag_rs1];
   assign rob_value_rs2 = value[rob_tag_rs2];
@@ -88,7 +102,8 @@ module reorder_buffer #(
 
   integer i_reset;
   always @(posedge clk_in) begin
-    if (rst_in) begin
+    if (rst_in | (rdy_in & clear_signal)) begin
+      clear_signal <= 1'b0;
       for (i_reset = 0; i_reset < ROB_SIZE; i_reset = i_reset + 1) begin
         busy[i_reset]  <= 1'b0;
         ready[i_reset] <= 1'b0;
@@ -96,18 +111,23 @@ module reorder_buffer #(
       for (i_reset = 0; i_reset < JALR_QUEUE_SIZE; i_reset = i_reset + 1) begin
         busy_jalr[i_reset] <= 1'b0;
       end
-      front_rob  <= {ROB_WIDTH{1'b0}};
-      front_jalr <= {ROB_WIDTH{1'b0}};
-      rear_rob   <= {ROB_WIDTH{1'b0}};
-      rear_jalr  <= {ROB_WIDTH{1'b0}};
+      front_rob <= {ROB_WIDTH{1'b0}};
+      front_jalr <= {JALR_QUEUE_WIDTH{1'b0}};
+      rear_rob <= {ROB_WIDTH{1'b0}};
+      rear_jalr <= {JALR_QUEUE_WIDTH{1'b0}};
+      reg_done <= 1'b0;
+      lsb_done <= 1'b0;
+      rs_done <= 1'b0;
+      predictor_signal <= 1'b0;
     end
   end
 
   always @(posedge clk_in) begin
-    if (rdy_in & issue_signal) begin  // issue instr
+    if (~rst_in & rdy_in & issue_signal & ~clear_signal) begin  // issue instr
       busy[rear_rob] <= 1'b1;
       ready[rear_rob] <= issue_value_ready;
       opcode[rear_rob] <= issue_opcode;
+      rd_id[rear_rob] <= issue_rd_id;
       rear_rob <= rear_rob + 1;
       if (issue_opcode == `JALR_INSTR) begin  // push to JALR queue
         pc_next_jalr[rear_rob] <= issue_value;
@@ -121,16 +141,20 @@ module reorder_buffer #(
   end
 
   always @(posedge clk_in) begin  // commit an instr
-    if (rdy_in) begin
+    if (~rst_in & rdy_in & ~clear_signal) begin
       if (busy[front_rob] & ready[front_rob]) begin
         busy[front_rob] <= 1'b0;
         front_rob <= front_rob + 1;
         case (opcode[front_rob])
-          `REG_INSTR: begin  // commit to RF
+          `REG_INSTR: begin  // commit to RF, RS
             reg_done <= 1'b1;
             reg_value <= value[front_rob];
             reg_tag <= front_rob;
+            reg_id <= rd_id[front_rob];
             lsb_done <= 1'b0;
+            rs_done <= 1'b1;
+            rs_value <= value[front_rob];
+            rs_tag <= front_rob;
             clear_signal <= 1'b0;
             predictor_signal <= 1'b0;
           end
@@ -138,11 +162,13 @@ module reorder_buffer #(
             reg_done <= 1'b0;
             lsb_done <= 1'b1;
             lsb_tag <= front_rob;
+            rs_done <= 1'b0;
             clear_signal <= 1'b0;
             predictor_signal <= 1'b0;
           end
           `BRANCH_INSTR: begin
             reg_done <= 1'b0;
+            rs_done  <= 1'b0;
             lsb_done <= 1'b0;
             if (value[front_rob][1] ^ value[front_rob][0]) begin  // predict wrongly
               clear_signal <= 1'b1;
@@ -157,6 +183,8 @@ module reorder_buffer #(
             reg_done <= 1'b1;
             reg_value <= pc_next_jalr[front_jalr];  // send PC+4 to rd
             reg_tag <= front_rob;
+            reg_id <= rd_id[front_rob];
+            rs_done <= 1'b0;
             busy_jalr[front_jalr] <= 1'b0;
             front_jalr <= front_jalr + 1;
             if (~(value[front_rob] == pc_prediction_jalr[front_jalr])) begin  // predict wrongly
@@ -169,17 +197,18 @@ module reorder_buffer #(
             predictor_signal <= 1'b0;
           end
         endcase
+      end else begin  // reset the signals, avoiding handling the signals for more than one time
+        reg_done <= 1'b0;
+        lsb_done <= 1'b0;
+        rs_done <= 1'b0;
+        clear_signal <= 1'b0;
+        predictor_signal <= 1'b0;
       end
-    end else begin  // reset the signals, avoiding handling the signals for more than one time
-      reg_done <= 1'b0;
-      lsb_done <= 1'b0;
-      clear_signal <= 1'b0;
-      predictor_signal <= 1'b0;
     end
   end
 
   always @(posedge clk_in) begin  // update value from ALU1
-    if (rdy_in & alu1_done) begin
+    if (~rst_in & rdy_in & alu1_done & ~clear_signal) begin
       ready[alu1_tag] <= 1'b1;
       if (opcode[alu1_tag] == `BRANCH_INSTR) begin
         value[alu1_tag][0] <= alu1_value[0]; // the bool result is place in the highest bit                                                                        
@@ -189,8 +218,8 @@ module reorder_buffer #(
     end
   end
 
-    always @(posedge clk_in) begin  // update value from ALU2
-    if (rdy_in & alu2_done) begin
+  always @(posedge clk_in) begin  // update value from ALU2
+    if (~rst_in & rdy_in & alu2_done & ~clear_signal) begin
       ready[alu2_tag] <= 1'b1;
       if (opcode[alu2_tag] == `BRANCH_INSTR) begin
         value[alu2_tag][0] <= alu2_value[0]; // the bool result is place in the highest bit                                                                        
@@ -201,7 +230,7 @@ module reorder_buffer #(
   end
 
   always @(posedge clk_in) begin  // update value from LSB
-    if (rdy_in & lsb_load_done) begin
+    if (~rst_in & rdy_in & lsb_load_done & ~clear_signal) begin
       ready[lsb_load_tag] <= 1'b1;
       if (opcode[lsb_load_tag] == `BRANCH_INSTR) begin
         value[lsb_load_tag][0] <= lsb_load_value[0]; // the bool result is place in the highest bit                                                                        
@@ -210,6 +239,21 @@ module reorder_buffer #(
       end
     end
   end
+
+  // integer f;
+  // initial begin
+  //   f = $fopen("f");
+  // end
+
+  // integer i;
+  // always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
+  //   if (~rst_in & rdy_in) begin  // 0th reg cannot be modified
+  //     $fdisplay(f, "signal:%d,commit_tag:%d", rob_commit_signal, commit_rd_tag);
+  //     for (i = 1; i < 32; i = i + 1) begin
+  //       $fdisplay(f, "%d:%h, tag:%d, valid:%d", i, values[i], tags[i], valid[i]);
+  //     end
+  //   end
+  // end
 
 endmodule
 `endif

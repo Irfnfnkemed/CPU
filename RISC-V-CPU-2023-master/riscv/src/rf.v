@@ -1,6 +1,3 @@
-`ifndef RF
-`define RF
-
 module register_file #(
     parameter ROB_WIDTH = 4
 ) (
@@ -28,12 +25,15 @@ module register_file #(
     // from rob (commit)
     input wire rob_commit_signal,  //1 for committing
     input wire [31:0] commit_rd_value,
+    input wire [4:0] commit_rd_id,
     input wire [ROB_WIDTH-1:0] commit_rd_tag
 );
 
   reg [31:0] values[31:0];  // registers
   reg [ROB_WIDTH-1:0] tags[31:0];  // register tags
   reg valid[31:0];  // validation of get register value, 1 for valid (invalid tag), 0 for invalid(valid tag)
+  reg [32:0] t;
+
 
   assign sign_1 = rob_commit_signal & ~valid[rs_id_1] & (tags[rs_id_1] == commit_rd_tag);// 1 when rob commitment update rs1 at the same time
   assign sign_2 = rob_commit_signal & ~valid[rs_id_2] & (tags[rs_id_2] == commit_rd_tag);// 1 when rob commitment update rs2 at the same time
@@ -47,36 +47,66 @@ module register_file #(
 
   integer i_reset;
   always @(posedge clk_in) begin  // reset register file
-    if (rst_in | (rdy_in & clear_signal)) begin
-      values[0] <= {32{1'b0}};
-      tags[0]   <= {ROB_WIDTH{1'b0}};
-      valid[0]  <= 1'b1;  // 0th reg is always 0
-      for (i_reset = 1; i_reset < 32; i_reset = i_reset + 1) begin
+    if (rst_in) begin
+      for (i_reset = 0; i_reset < 32; i_reset = i_reset + 1) begin
         values[i_reset] <= {32{1'b0}};
         tags[i_reset]   <= {ROB_WIDTH{1'b0}};
-        valid[i_reset]  <= 1'b0;
+        valid[i_reset]  <= 1'b1;
+      end
+    end
+  end
+
+  integer i_clear;
+  always @(posedge clk_in) begin  // clear register file's tags
+    if (~rst_in & rdy_in & clear_signal) begin
+      for (i_clear = 0; i_clear < 32; i_clear = i_clear + 1) begin
+        tags[i_clear]  <= {ROB_WIDTH{1'b0}};
+        valid[i_clear] <= 1'b1;
       end
     end
   end
 
   always @(posedge clk_in) begin  // overwrite the tag of rd (if rd is 0th reg, ignore)
-    if (rdy_in & instr_signal & (rd_id != 0)) begin
+    if (~rst_in & rdy_in & instr_signal & ~clear_signal & ~(rd_id == 0)) begin
       valid[rd_id] <= 1'b0;
       tags[rd_id]  <= rd_tag;
     end
   end
 
-  integer i_commit;
   always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
-    if (rdy_in & rob_commit_signal) begin  // 0th reg cannot be modified
-      for (i_commit = 1; i_commit < 32; i_commit = i_commit + 1) begin
-        if (~valid[i_commit] & (commit_rd_tag == tags[i_commit]) & ~(instr_signal & (rd_id == i_commit))) begin
-          valid[i_commit]  <= 1'b1;
-          values[i_commit] <= commit_rd_value;
-        end
-      end
+    if (~rst_in & rdy_in & rob_commit_signal & ~clear_signal & ~(commit_rd_id == 0)) begin  // 0th reg cannot be modified
+      values[commit_rd_id] <= commit_rd_value;
+      valid[commit_rd_id]  <= ~valid[commit_rd_id] & (commit_rd_tag == tags[commit_rd_id]) & ~(instr_signal & (rd_id == commit_rd_id));
     end
   end
 
+  // integer f;
+  // initial begin
+  //   f = $fopen("f");
+  //   t = 0;
+  // end
+
+  // integer i;
+  // always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
+  //   if (~rst_in & rdy_in) begin  // 0th reg cannot be modified
+  //     //$fdisplay(f, "signal:%d,commit_tag:%d", rob_commit_signal, commit_rd_tag);
+  //     $fdisplay(f,"");
+  //     for (i = 1; i < 32; i = i + 1) begin
+  //       $fdisplay(f, "%d:%d, tag:%d, valid:%d", i, values[i], tags[i], valid[i]);
+  //     end
+  //   end
+  // end
+
+  // integer i;
+  // always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
+  //   t <= t + 1; 
+  //   if (~rst_in & rdy_in & rob_commit_signal) begin  // 0th reg cannot be modified
+  //     //$fdisplay(f, "signal:%d,commit_tag:%d", rob_commit_signal, commit_rd_tag);
+  //     $fdisplay(f,"%d",t);
+  //     for (i = 1; i < 32; i = i + 1) begin
+  //       $fdisplay(f, "%d:%h", i, values[i]);
+  //     end
+  //   end
+  // end
+
 endmodule
-`endif

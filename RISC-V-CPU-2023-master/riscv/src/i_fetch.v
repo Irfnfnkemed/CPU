@@ -1,9 +1,6 @@
-`ifndef IF
-`define IF
-
 `define ROB_REG_INSTR 2'b00
 `define ROB_STORE_INSTR 2'b01
-`define ROB_BRANCH_INSTR 2'b01
+`define ROB_BRANCH_INSTR 2'b10
 `define ROB_JALR_INSTR 2'b11
 `define ALU_NOP 4'd0
 `define ALU_AND 4'd1
@@ -84,6 +81,7 @@ module instr_fetch #(
     output reg rob_value_ready,  // 1 for ready value
     output reg [1:0] rob_opcode,
     output reg [31:0] rob_value,
+    output reg [4:0] rob_rd_id,
     output reg [31:0] rob_pc_prediction,  // for JALR (PC+4 is in issue_value)
 
     // issue an instr to LSB
@@ -105,16 +103,14 @@ module instr_fetch #(
 );
   reg [31:0] pc;
 
-  assign issue_en = fetch_done & ~rob_full & ~rs_full & ~lsb_full; // 1 when last fetching is done and this cycle is issuing instr
-
-  assign fetch_signal = issue_en;  // this cycle is issuing, so fetch a new instr
+  assign fetch_signal = ~rob_full & ~rs_full & ~lsb_full;  // stop fetching when rob/rs/lsb is full
   assign fetch_addr = pc;
 
-  assign rf_signal = issue_en;  // 1 when issuing in this cycle
+  assign rf_signal = fetch_done & ~rob_full & ~rs_full & ~lsb_full & ~(fetch_instr[5:0] == 6'b100011);  // 1 when issuing to RF in this cycle
   assign rf_id_rs1 = fetch_instr[19:15];
   assign rf_id_rs2 = fetch_instr[24:20];
-  assign rf_id_rd = fetch_addr[11:7];
-  assign rf_tag_rd = rob_index;
+  assign rf_id_rd = fetch_instr[11:7];
+  assign rf_tag_rd = rob_issue_signal ? rob_index + 1 : rob_index;
 
   assign rob_tag_rs1 = rf_tag_rs1;
   assign rob_tag_rs2 = rf_tag_rs2;
@@ -122,6 +118,8 @@ module instr_fetch #(
   assign predict_addr = pc[LOCAL_WIDTH+1:2];
 
   // the value and validation of rs-reg according to RF and ROB
+  wire [31:0] value_rs1;
+  wire [31:0] value_rs2;
   assign value_rs1 = rf_valid_rs1 ? rf_value_rs1 : rob_value_rs1;
   assign value_rs2 = rf_valid_rs2 ? rf_value_rs2 : rob_value_rs2;
   assign valid_rs1 = rf_valid_rs1 | rob_ready_rs1;
@@ -137,7 +135,7 @@ module instr_fetch #(
   end
 
   always @(posedge clk_in) begin
-    if (rdy_in & clear_signal) begin
+    if (~rst_in & rdy_in & clear_signal) begin
       pc <= correct_pc;  // change next pc to correct pos
       rs_issue_signal <= 1'b0;  // stop issuing
       rob_issue_signal <= 1'b0;
@@ -146,8 +144,8 @@ module instr_fetch #(
   end
 
   always @(posedge clk_in) begin
-    if (rdy_in) begin
-      if (fetch_done) begin
+    if (~rst_in & rdy_in & ~clear_signal) begin
+      if (fetch_done & ~rob_full & ~rs_full & ~lsb_full) begin
         case (fetch_instr[6:0])
           7'b0110111: begin  // LUI
             pc <= pc + 4;
@@ -155,6 +153,7 @@ module instr_fetch #(
             rob_opcode <= `ROB_REG_INSTR;
             rob_value_ready <= 1'b1;
             rob_value <= {fetch_instr[31:12], {12{1'b0}}};
+            rob_rd_id <= rf_id_rd;
             rs_issue_signal <= 1'b0;
             lsb_issue_signal <= 1'b0;
           end
@@ -164,6 +163,7 @@ module instr_fetch #(
             rob_opcode <= `ROB_REG_INSTR;
             rob_value_ready <= 1'b1;
             rob_value <= pc + {fetch_instr[31:12], {12{1'b0}}};
+            rob_rd_id <= rf_id_rd;
             rs_issue_signal <= 1'b0;
             lsb_issue_signal <= 1'b0;
           end
@@ -172,6 +172,7 @@ module instr_fetch #(
             rob_opcode <= `ROB_REG_INSTR;
             rob_value_ready <= 1'b1;
             rob_value <= pc + 4;
+            rob_rd_id <= rf_id_rd;
             pc <= pc + {{12{fetch_instr[31]}}, fetch_instr[19:12], fetch_instr[20], fetch_instr[30:21], 1'b0};
           end
           7'b1100111: begin  // JALR
@@ -179,6 +180,7 @@ module instr_fetch #(
             rob_opcode <= `ROB_JALR_INSTR;
             rob_value_ready <= 1'b0;
             rob_value <= pc + 4;
+            rob_rd_id <= rf_id_rd;
             rob_pc_prediction <= (value_x1 + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
             pc <= (value_x1 + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
             rs_issue_signal <= 1'b1;
@@ -188,7 +190,7 @@ module instr_fetch #(
             rs_tag_rs1 <= rf_tag_rs1;
             rs_valid_rs1 <= valid_rs1;
             rs_valid_rs2 <= 1'b1;
-            rs_tag_rd <= rob_index;
+            rs_tag_rd <= rf_tag_rd;
             lsb_issue_signal <= 1'b0;
           end
           7'b1100011: begin  // BRANCH
@@ -199,7 +201,7 @@ module instr_fetch #(
               pc <= pc + {{20{fetch_instr[31]}}, fetch_instr[7], fetch_instr[30:25], fetch_instr[11:8], 1'b0};
               rob_value <= (pc + 4) | 32'h00000002;  // set rob_value[1] = 1 (predict-result)
             end else begin
-              pc <= pc + 4;  // set rob_value[1] = 1 (predict-result)
+              pc <= pc + 4;  // set rob_value[1] = 0 (predict-result)
               rob_value <= (pc + {{20{fetch_instr[31]}}, fetch_instr[7], fetch_instr[30:25], fetch_instr[11:8], 1'b0}) & 32'hFFFFFFFD;
             end
             rs_issue_signal <= 1'b1;
@@ -209,7 +211,7 @@ module instr_fetch #(
             rs_tag_rs2 <= rf_tag_rs2;
             rs_valid_rs1 <= valid_rs1;
             rs_valid_rs2 <= valid_rs2;
-            rs_tag_rd <= rob_index;
+            rs_tag_rd <= rf_tag_rd;
             case (fetch_instr[14:12])
               3'b000: begin
                 rs_opcode <= `ALU_EQ;
@@ -236,15 +238,16 @@ module instr_fetch #(
             pc <= pc + 4;
             rob_issue_signal <= 1'b1;
             rob_opcode <= `ROB_REG_INSTR;
+            rob_rd_id <= rf_id_rd;
             rob_value_ready <= 1'b0;
             rs_issue_signal <= 1'b0;
             lsb_issue_signal <= 1'b1;
-            lsb_wr <= 1'b1;
+            lsb_wr <= 1'b0;
             lsb_signed <= ~fetch_instr[14];
             lsb_addr <= value_rs1;
             lsb_offset <= fetch_instr[31:20];
             lsb_tag_addr <= rf_tag_rs1;
-            lsb_tag_rd <= rob_index;
+            lsb_tag_rd <= rf_tag_rd;
             lsb_valid_addr <= valid_rs1;
             case (fetch_instr[13:12])
               3'b00: begin
@@ -262,15 +265,16 @@ module instr_fetch #(
             pc <= pc + 4;
             rob_issue_signal <= 1'b1;
             rob_opcode <= `ROB_STORE_INSTR;
+            rob_value_ready <= 1'b1;
             rs_issue_signal <= 1'b0;
             lsb_issue_signal <= 1'b1;
-            lsb_wr <= 1'b0;
+            lsb_wr <= 1'b1;
             lsb_addr <= value_rs1;
             lsb_value <= value_rs2;
             lsb_offset <= {fetch_instr[31:25], fetch_instr[11:7]};
             lsb_tag_addr <= rf_tag_rs1;
             lsb_tag_value <= rf_tag_rs2;
-            lsb_tag_rd <= rob_index;
+            lsb_tag_rd <= rf_tag_rd;
             lsb_valid_addr <= valid_rs1;
             lsb_valid_value <= valid_rs2;
             case (fetch_instr[13:12])
@@ -289,6 +293,7 @@ module instr_fetch #(
             pc <= pc + 4;
             rob_issue_signal <= 1'b1;
             rob_opcode <= `ROB_REG_INSTR;
+            rob_rd_id <= rf_id_rd;
             rob_value_ready <= 1'b0;
             rs_issue_signal <= 1'b1;
             rs_value_rs1 <= value_rs1;
@@ -296,7 +301,7 @@ module instr_fetch #(
             rs_tag_rs1 <= rf_tag_rs1;
             rs_valid_rs1 <= valid_rs1;
             rs_valid_rs2 <= 1'b1;
-            rs_tag_rd <= rob_index;
+            rs_tag_rd <= rf_tag_rd;
             case (fetch_instr[14:12])
               3'b000: begin
                 rs_opcode <= `ALU_ADD;
@@ -329,6 +334,7 @@ module instr_fetch #(
             pc <= pc + 4;
             rob_issue_signal <= 1'b1;
             rob_opcode <= `ROB_REG_INSTR;
+            rob_rd_id <= rf_id_rd;
             rob_value_ready <= 1'b0;
             rs_issue_signal <= 1'b1;
             rs_value_rs1 <= value_rs1;
@@ -337,7 +343,7 @@ module instr_fetch #(
             rs_tag_rs2 <= rf_tag_rs2;
             rs_valid_rs1 <= valid_rs1;
             rs_valid_rs2 <= valid_rs2;
-            rs_tag_rd <= rob_index;
+            rs_tag_rd <= rf_tag_rd;
             case (fetch_instr[14:12])
               3'b000: begin
                 rs_opcode <= fetch_instr[30] ? `ALU_SUB : `ALU_ADD;
@@ -367,13 +373,23 @@ module instr_fetch #(
             lsb_issue_signal <= 1'b0;
           end
         endcase
+      end else begin
+        rob_issue_signal <= 1'b0;
+        rs_issue_signal  <= 1'b0;
+        lsb_issue_signal <= 1'b0;
       end
-    end else begin
-      rob_issue_signal <= 1'b0;
-      rs_issue_signal  <= 1'b0;
-      lsb_issue_signal <= 1'b0;
     end
   end
 
+  // integer f;
+  //   initial begin
+  //    f= $fopen("f");
+  //   end
+
+  //     integer i;
+  //   always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
+  //     if (~rst_in & rdy_in) begin  // 0th reg cannot be modified
+  //      $fdisplay(f,"%h",pc);
+  //     end
+  //   end
 endmodule
-`endif

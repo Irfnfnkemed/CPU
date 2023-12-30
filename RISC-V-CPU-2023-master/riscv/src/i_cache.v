@@ -1,6 +1,3 @@
-`ifndef ICACHE
-`define ICACHE
-
 `define FREE_STATUS 1'b0
 `define MEM_FETCH_STATUS 1'b1
 
@@ -30,7 +27,7 @@ module instr_cache #(
 );
   // cache line
   // instr-addr: [31-17] ignore | [16-11] tag | [10-3] index | [2] byte selector | [1-0] ignre (00)
-  reg valid[CACHE_WIDTH-1:0];  // 1 for valid
+  reg valid[CACHE_SIZE-1:0];  // 1 for valid
   reg [TAG_WIDTH-1:0] tag[CACHE_SIZE-1:0];
   reg [DATA_WIDTH-1:0] data[CACHE_SIZE-1:0];
 
@@ -53,19 +50,20 @@ module instr_cache #(
       mem_signal <= 1'b0;
       for (i_reset = 0; i_reset < CACHE_SIZE; i_reset = i_reset + 1) begin
         valid[i_reset] <= 1'b0;
+        tag[i_reset]   <= {TAG_WIDTH{1'b0}};
       end
     end
   end
 
   always @(posedge clk_in) begin
-    if (rdy_in & clear_signal) begin  // end the request of instruction fetch
+    if (~rst_in & rdy_in & clear_signal) begin  // end the request of instruction fetch
       status <= `FREE_STATUS;
       mem_signal <= 1'b0;
     end
   end
 
   always @(posedge clk_in) begin
-    if (rdy_in & ~clear_signal) begin
+    if (~rst_in & rdy_in & ~clear_signal) begin
       case (status)
         `FREE_STATUS: begin
           if (fetch_signal & ~fetch_done) begin  // not hit in cache, send to mem-controller
@@ -79,7 +77,7 @@ module instr_cache #(
             status <= `FREE_STATUS;
             mem_signal <= 1'b0;
             valid[fetch_index] <= 1'b1;
-            tag[fetch_index] <= mem_data[16:17-TAG_WIDTH];
+            tag[fetch_index] <= fetch_tag;
             data[fetch_index] <= mem_data;
           end
         end
@@ -88,4 +86,3 @@ module instr_cache #(
   end
 
 endmodule
-`endif

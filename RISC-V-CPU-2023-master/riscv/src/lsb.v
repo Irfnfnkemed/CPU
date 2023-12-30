@@ -1,6 +1,3 @@
-`ifndef LSB
-`define LSB
-
 module load_store_buffer #(
     parameter LSB_WIDTH = 4,
     parameter LSB_SIZE  = 2 ** LSB_WIDTH,
@@ -100,10 +97,10 @@ module load_store_buffer #(
 
   integer i_clear;
   always @(posedge clk_in) begin
-    if (rdy_in & clear_signal) begin
+    if (~rst_in & rdy_in & clear_signal) begin
       done_signal <= 1'b0;
       rear <= (busy[front] & wr[front] & ready[front]) ? (last_store_commit + 1) : front; // whether LSB has committed instr or not
-      if (~(mem_signal & mem_wr)) begin  // cancel the mem request excect store task 
+      if (~(mem_signal & mem_wr)) begin  // cancel the mem request except store task 
         mem_signal <= 1'b0;
         status <= 1'b0;
       end
@@ -117,31 +114,41 @@ module load_store_buffer #(
   end
 
   always @(posedge clk_in) begin
-    if (rdy_in & issue_signal) begin  // push new instr to rear pos when issuing
+    if (~rst_in & rdy_in & issue_signal & ~clear_signal) begin  // push new instr to rear pos when issuing
       busy[rear] <= 1'b1;
       ready[rear] <= issue_valid_addr & ~issue_wr; // for loading, ready bit is same to valid_addr, for storing, ready bit is 0
       wr[rear] <= issue_wr;
       sign[rear] <= issue_signed;
       len[rear] <= issue_len;
-      address[rear] <= issue_addr;
-      value[rear] <= issue_value;
       offset[rear] <= issue_offset;
-      tag_addr[rear] <= issue_tag_addr;
-      tag_value[rear] <= issue_tag_value;
       tag_rd[rear] <= issue_tag_rd;
-      valid_addr[rear] <= issue_valid_addr;
-      valid_value[rear] <= issue_valid_value;
       rear <= rear + 1;
+      if (mem_done & ~wr[front] & ~issue_valid_addr) begin
+        address[rear] <= mem_din;
+        valid_addr[rear] <= 1'b1;
+      end else begin
+        address[rear] <= issue_addr;
+        tag_addr[rear] <= issue_tag_addr;
+        valid_addr[rear] <= issue_valid_addr;
+      end
+      if (mem_done & ~wr[front] & ~issue_valid_value) begin
+        value[rear] <= mem_din;
+        valid_value[rear] <= 1'b1;
+      end else begin
+        value[rear] <= issue_value;
+        tag_value[rear] <= issue_tag_value;
+        valid_value[rear] <= issue_valid_value;
+      end
     end
   end
 
   always @(posedge clk_in) begin
-    if (rdy_in & ~status & busy[front] & ready[front]) begin  // do the load/store task at front pos
+    if (~rst_in & rdy_in & ~status & busy[front] & ready[front] & (~clear_signal | wr[front])) begin  // do the load/store task at front pos
       mem_signal <= 1'b1;
       mem_wr <= wr[front];
       mem_signed <= sign[front];
       mem_len <= len[front];
-      mem_addr <= address[front] + {{20{sign[front] & offset[front][11]}}, offset[front][11:0]};
+      mem_addr <= address[front] + {{20{offset[front][11]}}, offset[front][11:0]};
       mem_dout <= value[front];
       status <= 1'b1;
     end
@@ -149,8 +156,8 @@ module load_store_buffer #(
 
   integer i_mem;
   always @(posedge clk_in) begin
-    if (rdy_in) begin  // handle the result of load/store
-      if (mem_done) begin
+    if (~rst_in & rdy_in) begin  // handle the result of load/store
+      if (mem_done & (~clear_signal | wr[front])) begin
         status <= 1'b0;
         mem_signal <= 1'b0;  // end task
         front <= front + 1;  // free line
@@ -180,16 +187,21 @@ module load_store_buffer #(
     end
   end
 
+  integer i_commit;
   always @(posedge clk_in) begin
-    if (rdy_in & commit_signal) begin// only set store line to ready, because value&addr should be updated before
-      ready[commit_tag] <= 1'b1;
-      last_store_commit <= commit_tag;
+    if (~rst_in & rdy_in & commit_signal & ~clear_signal) begin // only set store line to ready, because value&addr should be updated before
+      for (i_commit = 0; i_commit < LSB_SIZE; i_commit = i_commit + 1) begin
+        if (busy[i_commit] & ~ready[i_commit] & wr[i_commit] & (tag_rd[i_commit] == commit_tag)) begin
+          ready[i_commit]   <= 1'b1;
+          last_store_commit <= i_commit;  // only one line(infact,store) can be modified
+        end
+      end
     end
   end
 
   integer i_alu1;
   always @(posedge clk_in) begin  // update load line according to the data from ALU 
-    if (rdy_in & alu1_signal) begin
+    if (~rst_in & rdy_in & alu1_signal & ~clear_signal) begin
       for (i_alu1 = 0; i_alu1 < LSB_SIZE; i_alu1 = i_alu1 + 1) begin
         if (busy[i_alu1]) begin  // update lines
           if (~valid_addr[i_alu1] & (tag_addr[i_alu1] == alu1_tag)) begin
@@ -208,7 +220,7 @@ module load_store_buffer #(
 
   integer i_alu2;
   always @(posedge clk_in) begin  // update load line according to the data from ALU 
-    if (rdy_in & alu2_signal) begin
+    if (~rst_in & rdy_in & alu2_signal & ~clear_signal) begin
       for (i_alu2 = 0; i_alu2 < LSB_SIZE; i_alu2 = i_alu2 + 1) begin
         if (busy[i_alu2]) begin  // update lines
           if (~valid_addr[i_alu2] & (tag_addr[i_alu2] == alu2_tag)) begin
@@ -226,4 +238,3 @@ module load_store_buffer #(
   end
 
 endmodule
-`endif
