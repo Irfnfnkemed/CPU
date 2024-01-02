@@ -1,7 +1,0 @@
-riscv/testspace/*
-
-*.o
-*.vcd
-a.out
-
-!.keep
