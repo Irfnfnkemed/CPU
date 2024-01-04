@@ -64,7 +64,7 @@ module alu #(
 
   always @(posedge clk_in) begin  // send the result
     if (~rst_in & rdy_in) begin
-      if (cal_signal & ~done_result) begin // don't calculate one task for more than one time, because it won't do continuous calculation
+      if (cal_signal) begin // don't calculate one task for more than one time, because it won't do continuous calculation
         done_result  <= 1'b1;
         value_result <= calculate[opcode];
         tag_result   <= tag;

@@ -21,16 +21,16 @@ module reservation_station #(
     input wire [ROB_WIDTH-1:0] rd_issue_tag,
 
     //output data for ALU calculating, supporting two ALUs
-    output reg busy_alu_1,  // 1 for sending calulating task to ALU1
-    output reg busy_alu_2,  // 1 for sending calulating task to ALU2
-    output reg [3:0] opcode_alu_1,
-    output reg [3:0] opcode_alu_2,
-    output reg [31:0] lhs_alu_1,
-    output reg [31:0] lhs_alu_2,
-    output reg [31:0] rhs_alu_1,
-    output reg [31:0] rhs_alu_2,
-    output reg [ROB_WIDTH-1:0] rd_tag_alu_1,
-    output reg [ROB_WIDTH-1:0] rd_tag_alu_2,
+    output wire busy_alu_1,  // 1 for sending calulating task to ALU1
+    output wire busy_alu_2,  // 1 for sending calulating task to ALU2
+    output wire [3:0] opcode_alu_1,
+    output wire [3:0] opcode_alu_2,
+    output wire [31:0] lhs_alu_1,
+    output wire [31:0] lhs_alu_2,
+    output wire [31:0] rhs_alu_1,
+    output wire [31:0] rhs_alu_2,
+    output wire [ROB_WIDTH-1:0] rd_tag_alu_1,
+    output wire [ROB_WIDTH-1:0] rd_tag_alu_2,
 
     // results from ALU, flushing RS
     input wire done_alu_1,  // 1 for ALU done
@@ -64,7 +64,7 @@ module reservation_station #(
   wire valid_alu1;  // validity of valid_alu1_pos
   wire valid_alu2;  // validity of valid_alu2_pos
 
-  wire ttt=rs_valid_2[2];
+  wire ttt = rs_valid_2[2];
 
   // assign to get the free position in RS and the position which could be calculated
   // if first line is free, select_pos is set to its index; else if second line is free, select_pos is set to its index
@@ -116,6 +116,20 @@ module reservation_station #(
     assign valid_alu2 = valid_alu_pos[3];
   endgenerate
 
+  assign busy_alu_1 = valid_alu1;
+  assign opcode_alu_1 = opcode[valid_alu1_pos];
+  assign lhs_alu_1 = rs_value_1[valid_alu1_pos];
+  assign rhs_alu_1 = rs_value_2[valid_alu1_pos];
+  assign rd_tag_alu_1 = rd_tag[valid_alu1_pos];
+
+  assign busy_alu_2 = valid_alu2;
+  assign opcode_alu_2 = opcode[valid_alu2_pos];
+  assign lhs_alu_2 = rs_value_1[valid_alu2_pos];
+  assign rhs_alu_2 = rs_value_2[valid_alu2_pos];
+  assign rd_tag_alu_2 = rd_tag[valid_alu2_pos];
+
+
+
   integer i_reset;
   always @(posedge clk_in) begin  // reset register file
     if (rst_in | (rdy_in & clear_signal)) begin
@@ -123,8 +137,6 @@ module reservation_station #(
         busy[i_reset]       <= 1'b0;
         rs_valid_1[i_reset] <= 1'b0;
         rs_valid_2[i_reset] <= 1'b0;
-        busy_alu_1          <= 1'b0;
-        busy_alu_2          <= 1'b0;
       end
     end
   end
@@ -168,7 +180,6 @@ module reservation_station #(
   integer i_alu_1;
   always @(posedge clk_in) begin  // flush rs values according to the ALU1 result
     if (~rst_in & rdy_in & done_alu_1 & ~clear_signal) begin
-      busy_alu_1 <= 1'b0;  // reset alu to free status
       for (i_alu_1 = 0; i_alu_1 < RS_SIZE; i_alu_1 = i_alu_1 + 1) begin
         if (busy[i_alu_1]) begin
           if (~rs_valid_1[i_alu_1] & (rs_tag_1[i_alu_1] == tag_alu_1)) begin
@@ -187,7 +198,6 @@ module reservation_station #(
   integer i_alu_2;
   always @(posedge clk_in) begin  // flush rs values according to the ALU2 result
     if (~rst_in & rdy_in & done_alu_2 & ~clear_signal) begin
-      busy_alu_2 <= 1'b0;  // reset alu to free status
       for (i_alu_2 = 0; i_alu_2 < RS_SIZE; i_alu_2 = i_alu_2 + 1) begin
         if (busy[i_alu_2]) begin
           if (~rs_valid_1[i_alu_2] & (rs_tag_1[i_alu_2] == tag_alu_2)) begin
@@ -224,21 +234,11 @@ module reservation_station #(
   // as tag&data are updated when ALU send back the result, updating when committing is unnecessary
   always @(posedge clk_in) begin  // send valid instr to ALU when ALU is free, and free the RS line at the same time
     if (~rst_in & rdy_in & ~clear_signal) begin
-      if (valid_alu1 & ~busy_alu_1) begin
-        busy_alu_1           <= 1'b1;
+      if (valid_alu1) begin
         busy[valid_alu1_pos] <= 1'b0;
-        opcode_alu_1         <= opcode[valid_alu1_pos];
-        lhs_alu_1            <= rs_value_1[valid_alu1_pos];
-        rhs_alu_1            <= rs_value_2[valid_alu1_pos];
-        rd_tag_alu_1         <= rd_tag[valid_alu1_pos];
       end
-      if (valid_alu2 & ~busy_alu_2) begin
-        busy_alu_2           <= 1'b1;
+      if (valid_alu2) begin
         busy[valid_alu2_pos] <= 1'b0;
-        opcode_alu_2         <= opcode[valid_alu2_pos];
-        lhs_alu_2            <= rs_value_1[valid_alu2_pos];
-        rhs_alu_2            <= rs_value_2[valid_alu2_pos];
-        rd_tag_alu_2         <= rd_tag[valid_alu2_pos];
       end
     end
   end
