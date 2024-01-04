@@ -430,7 +430,8 @@ module cpu (
   reorder_buffer #(
       .ROB_WIDTH      (ROB_WIDTH),
       .ROB_SIZE       (2 ** ROB_WIDTH),
-      .JALR_QUEUE_SIZE(JALR_QUEUE_SIZE)
+      .JALR_QUEUE_SIZE(JALR_QUEUE_SIZE),
+      .LOCAL_WIDTH    (LOCAL_WIDTH)
   ) u_reorder_buffer (
       .clk_in             (clk_in),
       .rst_in             (rst_in),

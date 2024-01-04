@@ -75,7 +75,7 @@ module instr_fetch #(
     input wire [31:0] lsb_done_value,
 
     // with predictor
-    output wire [LOCAL_WIDTH-1: 0] predict_addr,  // 10 bits in instruction address for selecting counter group
+    output wire [LOCAL_WIDTH-1: 0] predict_addr,  // LOCAL_WIDTH bits in instruction address for selecting counter group
     input wire predict_jump,  // 1 for jumping, 0 for continuing
     input wire [1:0] predict_selection,
 

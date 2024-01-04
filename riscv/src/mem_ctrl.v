@@ -79,7 +79,7 @@ module memory_controller (
                   lsb_done <= 1'b0;
                 end
               end else begin
-                status   <= `LSB_STORE_STATUS;
+                status <= `LSB_STORE_STATUS;
                 lsb_done <= 1'b0;
                 stage <= 4'b0000;  // do not store in this cycle
               end
@@ -106,7 +106,7 @@ module memory_controller (
             status <= `FREE_STATUS;
             instr_done <= 1'd0;
           end else begin
-            case (stage)  // begin at 1, for loading nead one cycle
+            case (stage)  // begin at 1, for loading need one cycle
               1: instr_d[7:0] <= mem_din;
               2: instr_d[15:8] <= mem_din;
               3: instr_d[23:16] <= mem_din;
@@ -120,7 +120,7 @@ module memory_controller (
               status <= `FREE_STATUS;
               instr_done <= 1'd1;
             end else begin
-              mem_a <= mem_a + 1;
+              mem_a <= instr_a + stage + 1;
               stage <= stage + 1;
             end
           end
@@ -150,7 +150,7 @@ module memory_controller (
                 end
               endcase
             end else begin
-              mem_a <= mem_a + 1;
+              mem_a <= lsb_a + stage + 1;
               stage <= stage + 1;
             end
           end
@@ -172,6 +172,11 @@ module memory_controller (
             end else begin
               stage <= stage + 1;
             end
+          end else begin // avoiding store when io_buffer_full is 1
+            mem_a <= 32'h00000000;
+            mem_wr <= 1'b0;
+            instr_done <= 1'b0;
+            lsb_done <= 1'b0;
           end
         end
       endcase

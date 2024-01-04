@@ -123,7 +123,7 @@ module load_store_buffer #(
   end
 
   wire hit_addr;
-  assign hit_addr = (mem_done & ~wr[front] & (tag_rd[front] == issue_tag_addr)) | 
+  assign hit_addr = (mem_done & ~wr[front] & (tag_rd[front] == issue_tag_addr)) | (done_signal & (done_tag == issue_tag_addr)) |
                     (alu1_signal & (alu1_tag == issue_tag_addr)) | (alu2_signal & (alu2_tag == issue_tag_addr));
   always @(posedge clk_in) begin
     if (~rst_in & rdy_in & issue_signal & ~clear_signal) begin  // push new instr to rear pos when issuing
@@ -141,6 +141,9 @@ module load_store_buffer #(
         if (mem_done & ~wr[front] & (tag_rd[front] == issue_tag_addr)) begin
           address[rear] <= mem_din;
           valid_addr[rear] <= 1'b1;
+        end else if (done_signal & (done_tag == issue_tag_addr)) begin
+          address[rear] <= done_value;
+          valid_addr[rear] <= 1'b1;
         end else if (alu1_signal & (alu1_tag == issue_tag_addr)) begin
           address[rear] <= alu1_value;
           valid_addr[rear] <= 1'b1;
@@ -157,6 +160,9 @@ module load_store_buffer #(
       if (issue_wr & ~issue_valid_value) begin
         if (mem_done & ~wr[front] & (tag_rd[front] == issue_tag_value)) begin
           value[rear] <= mem_din;
+          valid_value[rear] <= 1'b1;
+        end else if (done_signal & (done_tag == issue_tag_value)) begin
+          value[rear] <= done_value;
           valid_value[rear] <= 1'b1;
         end else if (alu1_signal & (alu1_tag == issue_tag_value)) begin
           value[rear] <= alu1_value;
