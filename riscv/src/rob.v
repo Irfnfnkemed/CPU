@@ -62,11 +62,6 @@ module reorder_buffer #(
     output reg [LOCAL_WIDTH-1:0] predictor_addr,  // predictor addr
     output reg [1:0] predictor_selection,
 
-    input wire transition_signal,  // 1 for status transition
-    output reg [LOCAL_WIDTH-1: 0] transition_addr, // LOCAL_WIDTH(6) bits in instruction address for transition
-    input wire [1:0] transition_selection,
-    input wire branch,  // 1 for jumping, 0 for continuing
-
     // with instr-fetch issue, send the information of rs-reg in combinational logic
     output wire [ROB_WIDTH-1:0] rob_tag,  // index of new line in ROB
     output wire [31:0] rob_value_rs1,

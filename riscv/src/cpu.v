@@ -39,7 +39,7 @@ module cpu (
   // - 0x30004 write: indicates program stop (will output '\0' through uart tx)
 
   parameter ROB_WIDTH = 4;
-  parameter LOCAL_WIDTH = 6;
+  parameter LOCAL_WIDTH = 4;
   parameter CACHE_DATA_WIDTH = 64;
   parameter CACHE_WIDTH = 8;
   parameter CACHE_TAG_WIDTH = 6;
