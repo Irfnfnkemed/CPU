@@ -54,8 +54,6 @@ module load_store_buffer #(
     output wire full
 );
 
-
-
   // LSB lines
   // tag_value is unnecessary, because it's useless for loading and value will be updated without tag when committing for store 
   reg busy[LSB_SIZE-1:0];  // 1 for line busy

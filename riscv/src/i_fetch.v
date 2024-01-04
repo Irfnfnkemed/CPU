@@ -203,37 +203,29 @@ module instr_fetch #(
             lsb_issue_signal <= 1'b0;
           end
           7'b1100111: begin  // JALR
-            rob_issue_signal <= 1'b1;
             rob_opcode <= `ROB_JALR_INSTR;
-            rob_value_ready <= 1'b0;
+            rob_value_ready <= 1'b1;
             rob_value <= pc + 4;
             rob_rd_id <= rf_id_rd;
-            rob_pc_prediction <= (value_x1 + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFCFFFE;
-            pc <= (value_x1 + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFCFFFE;
-            rs_issue_signal <= 1'b1;
-            rs_opcode <= `ALU_JALR;
-            rs_value_rs2 <= {{20{fetch_instr[31]}}, fetch_instr[31:20]};
-            rs_tag_rs1 <= rf_tag_rs1;
-            rs_valid_rs2 <= 1'b1;
-            rs_tag_rd <= rf_tag_rd;
+            rs_issue_signal <= 1'b0;
+            lsb_issue_signal <= 1'b0;
             if (~valid_rs1) begin
               if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
-                rs_value_rs1 <= alu1_done_value;
-                rs_valid_rs1 <= 1'b1;
+                rob_issue_signal <= 1'b1;
+                pc <= (alu1_done_value + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
               end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
-                rs_value_rs1 <= alu2_done_value;
-                rs_valid_rs1 <= 1'b1;
+                rob_issue_signal <= 1'b1;
+                pc <= (alu2_done_value + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
               end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
-                rs_value_rs1 <= lsb_done_value;
-                rs_valid_rs1 <= 1'b1;
+                rob_issue_signal <= 1'b1;
+                pc <= (lsb_done_value + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
               end else begin
-                rs_valid_rs1 <= 1'b0;
+                rob_issue_signal <= 1'b0;
               end
             end else begin
-              rs_value_rs1 <= value_rs1;
-              rs_valid_rs1 <= 1'b1;
+              rob_issue_signal <= 1'b1;
+              pc <= (value_rs1 + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
             end
-            lsb_issue_signal <= 1'b0;
           end
           7'b1100011: begin  // BRANCH
             rob_issue_signal <= 1'b1;

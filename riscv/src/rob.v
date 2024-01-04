@@ -134,14 +134,17 @@ module reorder_buffer #(
       opcode[rear_rob] <= issue_opcode;
       rd_id[rear_rob] <= issue_rd_id;
       rear_rob <= rear_rob + 1;
-      if (issue_opcode == `JALR_INSTR) begin  // push to JALR queue
-        pc_next_jalr[rear_jalr] <= issue_value;
-        pc_prediction_jalr[rear_jalr] <= issue_pc_prediction;
-        busy_jalr[rear_jalr] <= 1'b1;
-        rear_jalr <= rear_jalr + 1;
-      end else begin
-        value[rear_rob] <= issue_value;
-      end
+
+      value[rear_rob] <= issue_value;
+
+      // if (issue_opcode == `JALR_INSTR) begin  // push to JALR queue
+      //   pc_next_jalr[rear_jalr] <= issue_value;
+      //   pc_prediction_jalr[rear_jalr] <= issue_pc_prediction;
+      //   busy_jalr[rear_jalr] <= 1'b1;
+      //   rear_jalr <= rear_jalr + 1;
+      // end else begin
+      //   value[rear_rob] <= issue_value;
+      // end
     end
   end
 
@@ -180,23 +183,34 @@ module reorder_buffer #(
             end
             predictor_signal <= 1'b1;
             predictor_branch <= value[front_rob][0];
-            predictor_addr <= value[front_rob][31:32-LOCAL_WIDTH];
+            predictor_addr   <= value[front_rob][31:32-LOCAL_WIDTH];
           end
           `JALR_INSTR: begin
             reg_done <= 1'b1;
-            reg_value <= pc_next_jalr[front_jalr];  // send PC+4 to rd
+            reg_value <= value[front_rob];
             reg_tag <= front_rob;
             reg_id <= rd_id[front_rob];
-            busy_jalr[front_jalr] <= 1'b0;
-            front_jalr <= front_jalr + 1;
-            if (~(value[front_rob] == pc_prediction_jalr[front_jalr])) begin  // predict wrongly
-              clear_signal <= 1'b1;
-              correct_pc   <= value[front_rob];
-            end else begin
-              clear_signal <= 1'b0;
-            end
             lsb_done <= 1'b0;
+            clear_signal <= 1'b0;
             predictor_signal <= 1'b0;
+
+
+            // reg_done <= 1'b1;
+            // reg_value <= pc_next_jalr[front_jalr];  // send PC+4 to rd
+            // reg_tag <= front_rob;
+            // reg_id <= rd_id[front_rob];
+            // busy_jalr[front_jalr] <= 1'b0;
+            // front_jalr <= front_jalr + 1;
+            // if (~(value[front_rob] == pc_prediction_jalr[front_jalr])) begin  // predict wrongly
+            //   clear_signal <= 1'b1;
+            //   correct_pc   <= value[front_rob];
+            // end else begin
+            //   clear_signal <= 1'b0;
+            // end
+            // lsb_done <= 1'b0;
+            // predictor_signal <= 1'b0;
+
+            
           end
         endcase
       end else begin  // reset the signals, avoiding handling the signals for more than one time
