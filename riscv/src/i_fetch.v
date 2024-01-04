@@ -77,7 +77,6 @@ module instr_fetch #(
     // with predictor
     output wire [LOCAL_WIDTH-1: 0] predict_addr,  // LOCAL_WIDTH bits in instruction address for selecting counter group
     input wire predict_jump,  // 1 for jumping, 0 for continuing
-    input wire [1:0] predict_selection,
 
     // issue an instr to RS
     output reg rs_issue_signal,  // 1 for issuing
@@ -241,14 +240,13 @@ module instr_fetch #(
             rob_opcode <= `ROB_BRANCH_INSTR;
             rob_value_ready <= 1'b0;
             rob_value[31:32-LOCAL_WIDTH] <= predict_addr;
-            rob_value[31-LOCAL_WIDTH:30-LOCAL_WIDTH] <= predict_selection;
             if (predict_jump) begin
               pc <= pc_next_with_jump;
-              rob_value[29-LOCAL_WIDTH:2] <= pc_next_without_jump[29-LOCAL_WIDTH:2];
+              rob_value[31-LOCAL_WIDTH:2] <= pc_next_without_jump[31-LOCAL_WIDTH:2];
               rob_value[1:0] <= 2'b10;  // set rob_value[1] = 1 (predict-result)
             end else begin
               pc <= pc_next_without_jump;
-              rob_value[29-LOCAL_WIDTH:2] <= pc_next_with_jump[29-LOCAL_WIDTH:2];
+              rob_value[31-LOCAL_WIDTH:2] <= pc_next_with_jump[31-LOCAL_WIDTH:2];
               rob_value[1:0] <= 2'b00;  // set rob_value[1] = 0 (predict-result)
             end
             rs_issue_signal <= 1'b1;

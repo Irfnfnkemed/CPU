@@ -86,7 +86,6 @@ module cpu (
   // instr_fetch <--> predictor
   wire [LOCAL_WIDTH-1:0] if_pred_addr;
   wire                   if_pred_jump;
-  wire [            1:0] if_pred_selection;
 
   // instr_fetch <--> reservation_station
   wire                   if_rs_issue_signal;
@@ -184,7 +183,6 @@ module cpu (
   wire                   rob_pred_signal;
   wire                   rob_pred_branch;
   wire [LOCAL_WIDTH-1:0] rob_pred_addr;
-  wire [            1:0] rob_pred_selection;
 
   instr_fetch #(
       .ROB_WIDTH  (ROB_WIDTH),
@@ -230,7 +228,6 @@ module cpu (
       .lsb_done_value   (lsb_done_value),
       .predict_addr     (if_pred_addr),
       .predict_jump     (if_pred_jump),
-      .predict_selection(if_pred_selection),
       .rs_issue_signal  (if_rs_issue_signal),
       .rs_opcode        (if_rs_opcode),
       .rs_value_rs1     (if_rs_value_rs1),
@@ -391,14 +388,11 @@ module cpu (
   ) u_predictor (
       .clk_in              (clk_in),
       .rst_in              (rst_in),
-      .rdy_in              (rdy_in),
       .transition_signal   (rob_pred_signal),
       .transition_addr     (rob_pred_addr),
-      .transition_selection(if_pred_selection),
       .branch              (rob_pred_branch),
       .instr_addr          (if_pred_addr),
-      .prediction          (if_pred_jump),
-      .selection           (rob_pred_selection)
+      .prediction          (if_pred_jump)
   );
 
 
@@ -465,7 +459,6 @@ module cpu (
       .predictor_signal   (rob_pred_signal),
       .predictor_branch   (rob_pred_branch),
       .predictor_addr     (rob_pred_addr),
-      .predictor_selection(rob_pred_selection),
       .rob_tag            (if_rob_tag),
       .rob_value_rs1      (if_rob_value_rs1),
       .rob_value_rs2      (if_rob_value_rs2),

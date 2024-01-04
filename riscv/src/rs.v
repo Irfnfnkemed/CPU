@@ -45,11 +45,6 @@ module reservation_station #(
     input wire [31:0] value_lsb,
     input wire [ROB_WIDTH-1:0] tag_lsb,
 
-    // results from ROB committing, flushing RS
-    input wire done_commit,
-    input wire [31:0] value_commit,
-    input wire [ROB_WIDTH-1:0] tag_commit,
-
     output wire full  // 1 for RS is full
 );
 
@@ -220,24 +215,6 @@ module reservation_station #(
           if (~rs_valid_2[i_lsb] & (rs_tag_2[i_lsb] == tag_lsb)) begin
             rs_valid_2[i_lsb] <= 1'b1;
             rs_value_2[i_lsb] <= value_lsb;
-          end
-        end
-      end
-    end
-  end
-
-  integer i_commit;
-  always @(posedge clk_in) begin  // flush rs values according to the ROB result
-    if (~rst_in & rdy_in & done_commit & ~clear_signal) begin
-      for (i_commit = 0; i_commit < RS_SIZE; i_commit = i_commit + 1) begin
-        if (busy[i_commit]) begin
-          if (~rs_valid_1[i_commit] & (rs_tag_1[i_commit] == tag_commit)) begin
-            rs_valid_1[i_commit] <= 1'b1;
-            rs_value_1[i_commit] <= value_commit;
-          end
-          if (~rs_valid_2[i_commit] & (rs_tag_2[i_commit] == tag_commit)) begin
-            rs_valid_2[i_commit] <= 1'b1;
-            rs_value_2[i_commit] <= value_commit;
           end
         end
       end

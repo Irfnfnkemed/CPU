@@ -51,16 +51,10 @@ module reorder_buffer #(
     output reg lsb_done,  // 1 for committing to RF
     output reg [ROB_WIDTH-1:0] lsb_tag,
 
-    // commit to RS (for REG_INSTR, that not issued to RS more precisely)
-    output reg rs_done,  // 1 for committing to RS
-    output reg [31:0] rs_value,
-    output reg [ROB_WIDTH-1:0] rs_tag,
-
     // send jump status to predictor when committing br-instr
     output reg predictor_signal,  // 1 for committing br-instr
     output reg predictor_branch,  // 1 for jumping, 0 for continuing
     output reg [LOCAL_WIDTH-1:0] predictor_addr,  // predictor addr
-    output reg [1:0] predictor_selection,
 
     // with instr-fetch issue, send the information of rs-reg in combinational logic
     output wire [ROB_WIDTH-1:0] rob_tag,  // index of new line in ROB
@@ -75,7 +69,7 @@ module reorder_buffer #(
 );
 
   // ROB line
-  // BRANCH_INSTR: [31:26] the predictor index | [25:24] the predictor selection | [23:2] the PC different from prediction(hight bits are ignored; last two bits are 0, ignored) | [1] predictor-result | [0] br-result
+  // BRANCH_INSTR: [31:26] the predictor index | [25:2] the PC different from prediction(hight bits are ignored; last two bits are 0, ignored) | [1] predictor-result | [0] br-result
   reg busy[ROB_SIZE-1:0];  // 1 for busy
   reg ready[ROB_SIZE-1:0];  // 1 for ready
   reg [1:0] opcode[ROB_SIZE-1:0];  // the category of instruction
@@ -129,7 +123,6 @@ module reorder_buffer #(
       rear_jalr <= {JALR_QUEUE_WIDTH{1'b0}};
       reg_done <= 1'b0;
       lsb_done <= 1'b0;
-      rs_done <= 1'b0;
       predictor_signal <= 1'b0;
     end
   end
@@ -164,9 +157,6 @@ module reorder_buffer #(
             reg_tag <= front_rob;
             reg_id <= rd_id[front_rob];
             lsb_done <= 1'b0;
-            rs_done <= 1'b1;
-            rs_value <= value[front_rob];
-            rs_tag <= front_rob;
             clear_signal <= 1'b0;
             predictor_signal <= 1'b0;
           end
@@ -174,13 +164,11 @@ module reorder_buffer #(
             reg_done <= 1'b0;
             lsb_done <= 1'b1;
             lsb_tag <= front_rob;
-            rs_done <= 1'b0;
             clear_signal <= 1'b0;
             predictor_signal <= 1'b0;
           end
           `BRANCH_INSTR: begin
             reg_done <= 1'b0;
-            rs_done  <= 1'b0;
             lsb_done <= 1'b0;
             if (value[front_rob][1] ^ value[front_rob][0]) begin  // predict wrongly
               clear_signal <= 1'b1;
@@ -193,16 +181,12 @@ module reorder_buffer #(
             predictor_signal <= 1'b1;
             predictor_branch <= value[front_rob][0];
             predictor_addr <= value[front_rob][31:32-LOCAL_WIDTH];
-            predictor_selection <= value[front_rob][31-LOCAL_WIDTH:30-LOCAL_WIDTH];
           end
           `JALR_INSTR: begin
             reg_done <= 1'b1;
             reg_value <= pc_next_jalr[front_jalr];  // send PC+4 to rd
             reg_tag <= front_rob;
             reg_id <= rd_id[front_rob];
-            rs_done <= 1'b1;
-            rs_tag <= front_rob;
-            rs_value <= pc_next_jalr[front_jalr];
             busy_jalr[front_jalr] <= 1'b0;
             front_jalr <= front_jalr + 1;
             if (~(value[front_rob] == pc_prediction_jalr[front_jalr])) begin  // predict wrongly
@@ -218,7 +202,6 @@ module reorder_buffer #(
       end else begin  // reset the signals, avoiding handling the signals for more than one time
         reg_done <= 1'b0;
         lsb_done <= 1'b0;
-        rs_done <= 1'b0;
         clear_signal <= 1'b0;
         predictor_signal <= 1'b0;
       end
