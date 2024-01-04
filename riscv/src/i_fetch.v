@@ -21,7 +21,7 @@
 
 module instr_fetch #(
     parameter ROB_WIDTH   = 4,
-    parameter LOCAL_WIDTH = 10
+    parameter LOCAL_WIDTH = 6
 ) (
     input wire clk_in,  // system clock signal
     input wire rst_in,  // reset signal
@@ -75,8 +75,9 @@ module instr_fetch #(
     input wire [31:0] lsb_done_value,
 
     // with predictor
-    output wire [LOCAL_WIDTH - 1: 0] predict_addr,  // 10 bits in instruction address for selecting counter group
+    output wire [LOCAL_WIDTH-1: 0] predict_addr,  // 10 bits in instruction address for selecting counter group
     input wire predict_jump,  // 1 for jumping, 0 for continuing
+    input wire [1:0] predict_selection,
 
     // issue an instr to RS
     output reg rs_issue_signal,  // 1 for issuing
@@ -123,12 +124,18 @@ module instr_fetch #(
   assign rf_id_rs1 = fetch_instr[19:15];
   assign rf_id_rs2 = fetch_instr[24:20];
   assign rf_id_rd = fetch_instr[11:7];
-  assign rf_tag_rd = rob_issue_signal ? rob_index + 1:rob_index;
+  assign rf_tag_rd = rob_issue_signal ? rob_index + 1 : rob_index;
 
   assign rob_tag_rs1 = rf_tag_rs1;
   assign rob_tag_rs2 = rf_tag_rs2;
 
   assign predict_addr = pc[LOCAL_WIDTH+1:2];
+
+  wire [31:0] pc_next_without_jump;
+  wire [31:0] pc_next_with_jump;
+
+  assign pc_next_without_jump = pc + 4;
+  assign pc_next_with_jump = pc + {{20{fetch_instr[31]}}, fetch_instr[7], fetch_instr[30:25], fetch_instr[11:8], 1'b0}; // for BR's pc jumping address
 
   // the value and validation of rs-reg according to RF and ROB
   wire [31:0] value_rs1;
@@ -233,12 +240,16 @@ module instr_fetch #(
             rob_issue_signal <= 1'b1;
             rob_opcode <= `ROB_BRANCH_INSTR;
             rob_value_ready <= 1'b0;
+            rob_value[31:32-LOCAL_WIDTH] <= predict_addr;
+            rob_value[31-LOCAL_WIDTH:30-LOCAL_WIDTH] <= predict_selection;
             if (predict_jump) begin
-              pc <= pc + {{20{fetch_instr[31]}}, fetch_instr[7], fetch_instr[30:25], fetch_instr[11:8], 1'b0};
-              rob_value <= (pc + 4) | 32'h00000002;  // set rob_value[1] = 1 (predict-result)
+              pc <= pc_next_with_jump;
+              rob_value[29-LOCAL_WIDTH:2] <= pc_next_without_jump[29-LOCAL_WIDTH:2];
+              rob_value[1:0] <= 2'b10;  // set rob_value[1] = 1 (predict-result)
             end else begin
-              pc <= pc + 4;  // set rob_value[1] = 0 (predict-result)
-              rob_value <= (pc + {{20{fetch_instr[31]}}, fetch_instr[7], fetch_instr[30:25], fetch_instr[11:8], 1'b0}) & 32'hFFFFFFFD;
+              pc <= pc_next_without_jump;
+              rob_value[29-LOCAL_WIDTH:2] <= pc_next_with_jump[29-LOCAL_WIDTH:2];
+              rob_value[1:0] <= 2'b00;  // set rob_value[1] = 0 (predict-result)
             end
             rs_issue_signal <= 1'b1;
             rs_tag_rs1 <= rf_tag_rs1;
@@ -445,7 +456,7 @@ module instr_fetch #(
                 rs_opcode <= `ALU_XOR;
               end
               3'b101: begin
-                rs_opcode <= fetch_instr[30] ? `ALU_SRA:`ALU_SRL;
+                rs_opcode <= fetch_instr[30] ? `ALU_SRA : `ALU_SRL;
               end
               3'b110: begin
                 rs_opcode <= `ALU_OR;
@@ -502,7 +513,7 @@ module instr_fetch #(
             end
             case (fetch_instr[14:12])
               3'b000: begin
-                rs_opcode <= fetch_instr[30] ? `ALU_SUB:`ALU_ADD;
+                rs_opcode <= fetch_instr[30] ? `ALU_SUB : `ALU_ADD;
               end
               3'b010: begin
                 rs_opcode <= `ALU_LT;
@@ -523,7 +534,7 @@ module instr_fetch #(
                 rs_opcode <= `ALU_SLL;
               end
               3'b101: begin
-                rs_opcode <= fetch_instr[30] ? `ALU_SRA:`ALU_SRL;
+                rs_opcode <= fetch_instr[30] ? `ALU_SRA : `ALU_SRL;
               end
             endcase
             lsb_issue_signal <= 1'b0;

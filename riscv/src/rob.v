@@ -10,7 +10,8 @@ module reorder_buffer #(
     parameter ROB_WIDTH = 4,
     parameter ROB_SIZE = 2 ** ROB_WIDTH,
     parameter JALR_QUEUE_WIDTH = 2,
-    parameter JALR_QUEUE_SIZE = 2 ** JALR_QUEUE_WIDTH
+    parameter JALR_QUEUE_SIZE = 2 ** JALR_QUEUE_WIDTH,
+    parameter LOCAL_WIDTH = 6
 ) (
     input wire clk_in,  // system clock signal
     input wire rst_in,  // reset signal
@@ -58,6 +59,13 @@ module reorder_buffer #(
     // send jump status to predictor when committing br-instr
     output reg predictor_signal,  // 1 for committing br-instr
     output reg predictor_branch,  // 1 for jumping, 0 for continuing
+    output reg [LOCAL_WIDTH-1:0] predictor_addr,  // predictor addr
+    output reg [1:0] predictor_selection,
+
+    input wire transition_signal,  // 1 for status transition
+    output reg [LOCAL_WIDTH-1: 0] transition_addr, // LOCAL_WIDTH(6) bits in instruction address for transition
+    input wire [1:0] transition_selection,
+    input wire branch,  // 1 for jumping, 0 for continuing
 
     // with instr-fetch issue, send the information of rs-reg in combinational logic
     output wire [ROB_WIDTH-1:0] rob_tag,  // index of new line in ROB
@@ -72,7 +80,7 @@ module reorder_buffer #(
 );
 
   // ROB line
-  // BRANCH_INSTR: [31:2] the PC different from prediction(last two bits are 0, ignored) | [1] predictor-result | [0] br-result
+  // BRANCH_INSTR: [31:26] the predictor index | [25:24] the predictor selection | [23:2] the PC different from prediction(hight bits are ignored; last two bits are 0, ignored) | [1] predictor-result | [0] br-result
   reg busy[ROB_SIZE-1:0];  // 1 for busy
   reg ready[ROB_SIZE-1:0];  // 1 for ready
   reg [1:0] opcode[ROB_SIZE-1:0];  // the category of instruction
@@ -99,6 +107,15 @@ module reorder_buffer #(
   assign rob_value_rs2 = value[rob_tag_rs2];
   assign rob_ready_rs1 = busy[rob_tag_rs1] & ready[rob_tag_rs1];
   assign rob_ready_rs2 = busy[rob_tag_rs2] & ready[rob_tag_rs2];
+
+  reg [31:0] c;
+  reg [31:0] w;
+
+  always @(posedge clk_in)
+    if (rst_in) begin
+      c = 0;
+      w = 0;
+    end
 
   integer i_reset;
   always @(posedge clk_in) begin
@@ -172,12 +189,16 @@ module reorder_buffer #(
             lsb_done <= 1'b0;
             if (value[front_rob][1] ^ value[front_rob][0]) begin  // predict wrongly
               clear_signal <= 1'b1;
-              correct_pc   <= value[front_rob] & 32'hFFFFFFFC;  // set last two bits to 0
+              correct_pc   <= value[front_rob] & 32'h0003FFFC;  // set high bits and last two bits to 0
+              w <= w + 1;
             end else begin
               clear_signal <= 1'b0;
+              c <= c + 1;
             end
             predictor_signal <= 1'b1;
             predictor_branch <= value[front_rob][0];
+            predictor_addr <= value[front_rob][31:32-LOCAL_WIDTH];
+            predictor_selection <= value[front_rob][31-LOCAL_WIDTH:30-LOCAL_WIDTH];
           end
           `JALR_INSTR: begin
             reg_done <= 1'b1;
