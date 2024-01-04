@@ -62,7 +62,7 @@ module predictor #(
         saturation_counter unit_counter (
             .clk_in(clk_in),
             .rst_in(rst_in),
-            .transition_signal(transition_signal & (transition_addr == i) & (transition_selection == j)),
+            .transition_signal(transition_signal & (transition_addr == i) & (0 == j)),
             .branch(branch),
             .prediction(prediction_group[i][j])
         );
@@ -70,6 +70,6 @@ module predictor #(
     end
   endgenerate
 
-  assign prediction = prediction_group[instr_addr][selection];
+  assign prediction = prediction_group[instr_addr][0];
 
 endmodule
