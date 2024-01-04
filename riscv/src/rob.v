@@ -201,6 +201,7 @@ module reorder_buffer #(
             reg_tag <= front_rob;
             reg_id <= rd_id[front_rob];
             rs_done <= 1'b1;
+            rs_tag <= front_rob;
             rs_value <= pc_next_jalr[front_jalr];
             busy_jalr[front_jalr] <= 1'b0;
             front_jalr <= front_jalr + 1;
