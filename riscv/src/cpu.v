@@ -151,11 +151,6 @@ module cpu (
   wire                   rob_lsb_done;
   wire [  ROB_WIDTH-1:0] rob_lsb_tag;
 
-  // reorder_buffer <--> reservation_station
-  wire                   rs_done;
-  wire [           31:0] rs_value;
-  wire [  ROB_WIDTH-1:0] rs_tag;
-
   // mem_ctrl <--> i_cache
   wire                   memctrl_icache_signal;
   wire [           31:0] memctrl_icache_addr;
@@ -453,9 +448,6 @@ module cpu (
       .reg_tag            (rob_rf_tag),
       .lsb_done           (rob_lsb_done),
       .lsb_tag            (rob_lsb_tag),
-      .rs_done            (rs_done),
-      .rs_value           (rs_value),
-      .rs_tag             (rs_tag),
       .predictor_signal   (rob_pred_signal),
       .predictor_branch   (rob_pred_branch),
       .predictor_addr     (rob_pred_addr),
@@ -507,9 +499,6 @@ module cpu (
       .done_lsb        (lsb_done_signal),
       .value_lsb       (lsb_done_value),
       .tag_lsb         (lsb_done_tag),
-      .done_commit     (rs_done),
-      .value_commit    (rs_value),
-      .tag_commit      (rs_tag),
       .full            (if_rs_full)
   );
 
