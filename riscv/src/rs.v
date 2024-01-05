@@ -59,10 +59,10 @@ module reservation_station #(
   reg rs_valid_2[RS_SIZE-1:0];  // 1 for rs_2 value is valid
   reg [ROB_WIDTH-1:0] rd_tag[RS_SIZE-1:0];
   wire [RS_WIDTH-1:0] free_pos;  // free position when RS is not full
-  wire [RS_WIDTH-1:0] valid_alu1_pos;  // valid position for ALU1 to calculate
-  wire [RS_WIDTH-1:0] valid_alu2_pos;  // valid position for ALU2 to calculate
-  wire valid_alu1;  // validity of valid_alu1_pos
-  wire valid_alu2;  // validity of valid_alu2_pos
+  wire [RS_WIDTH-1:0] alu1_pos;  // valid position for ALU1 to calculate
+  wire [RS_WIDTH-1:0] alu2_pos;  // valid position for ALU2 to calculate
+  wire valid_alu1;  // validity of alu1_pos
+  wire valid_alu2;  // validity of alu2_pos
 
   wire ttt = rs_valid_2[2];
 
@@ -72,61 +72,72 @@ module reservation_station #(
   // if first line is valid for calculating, select_alu_pos is set to its index; else if second line is valid for calculating, select_alu_pos is set to its index
   // if both lines are invalid for calculating, set valid_alu_pos to 0; else set it to 1
   // for ALU1, calculating line index range: [0, RS_SIZE/2-1] ; for ALU2,calculating line index range: [RS_SIZE/2 , RS_SIZE-1]
-  `define tmp1 (i_select - 8) << 1
-  `define tmp2 1 + ((i_select - 8) << 1)
-  `define tmp3 i_select << 1
-  `define tmp4 1 + (i_select << 1)
   genvar i_select;
   generate
     wire [RS_WIDTH-1:0] select_pos[RS_SIZE-1:1];
     wire valid_pos[RS_SIZE-1:1];  // 1 for valid(free)
-    wire [RS_WIDTH-1:0] select_alu_pos[RS_SIZE-1:1];
-    wire valid_alu_pos[RS_SIZE-1:1];  // 1 for valid
+    wire [RS_WIDTH-1:0] select_alu1_pos[RS_SIZE/2-1:1];
+    wire [RS_WIDTH-1:0] select_alu2_pos[RS_SIZE/2-1:1];
+    wire valid_alu1_pos[RS_SIZE/2-1:1];  // 1 for valid
+    wire valid_alu2_pos[RS_SIZE/2-1:1];
     wire valid_cal[RS_SIZE-1:0];  // 1 for valid to calculate
+
     for (i_select = RS_SIZE / 2; i_select < RS_SIZE; i_select = i_select + 1) begin
-      assign select_pos[i_select] = ({RS_WIDTH{~busy[`tmp1]}} & `tmp1) |
-                                    ({RS_WIDTH{busy[`tmp1]}} & {RS_WIDTH{~busy[`tmp2]}} & `tmp2);
-      assign valid_pos[i_select] = ~busy[`tmp1] | ~busy[`tmp2];
+      assign select_pos[i_select] = ({RS_WIDTH{~busy[2*i_select-16]}} & (2*i_select-16)) |
+                                    ({RS_WIDTH{busy[2*i_select-16]}} & {RS_WIDTH{~busy[2*i_select-15]}} & (2*i_select-15));
+      assign valid_pos[i_select] = ~busy[2*i_select-16] | ~busy[2*i_select-15];
     end
     for (i_select = 1; i_select < RS_SIZE / 2; i_select = i_select + 1) begin
-      assign select_pos[i_select] = ({RS_WIDTH{valid_pos[`tmp3]}} & select_pos[`tmp3]) |
-                                    ({RS_WIDTH{~valid_pos[`tmp3]}} & {RS_WIDTH{valid_pos[`tmp4]}} & select_pos[`tmp4]);
-      assign valid_pos[i_select] = valid_pos[`tmp3] | valid_pos[`tmp4];
+      assign select_pos[i_select] = ({RS_WIDTH{valid_pos[2*i_select]}} & select_pos[2*i_select]) |
+                                    ({RS_WIDTH{~valid_pos[2*i_select]}} & {RS_WIDTH{valid_pos[2*i_select+1]}} & select_pos[2*i_select+1]);
+      assign valid_pos[i_select] = valid_pos[2*i_select] | valid_pos[2*i_select+1];
     end
 
     for (i_select = 0; i_select < RS_SIZE; i_select = i_select + 1) begin
       assign valid_cal[i_select] = busy[i_select] & rs_valid_1[i_select] & rs_valid_2[i_select];
     end
 
-    for (i_select = RS_SIZE / 2; i_select < RS_SIZE; i_select = i_select + 1) begin
-      assign select_alu_pos[i_select] = ({RS_WIDTH{valid_cal[`tmp1]}} & `tmp1) |
-                                    ({RS_WIDTH{~valid_cal[`tmp1]}} & {RS_WIDTH{valid_cal[`tmp2]}} & `tmp2);
-      assign valid_alu_pos[i_select] = valid_cal[`tmp1] | valid_cal[`tmp2];
+    for (i_select = RS_SIZE / 4; i_select < RS_SIZE / 2; i_select = i_select + 1) begin
+      assign select_alu1_pos[i_select] = ({RS_WIDTH{valid_cal[4*i_select-16]}} & (4*i_select-16)) |
+                                    ({RS_WIDTH{~valid_cal[4*i_select-16]}} & {RS_WIDTH{valid_cal[4*i_select-14]}} & (4*i_select-14));
+      assign valid_alu1_pos[i_select] = valid_cal[4*i_select-16] | valid_cal[4*i_select-14];
     end
-    for (i_select = 2; i_select < RS_SIZE / 2; i_select = i_select + 1) begin
-      assign select_alu_pos[i_select] = ({RS_WIDTH{valid_alu_pos[`tmp3]}} & select_alu_pos[`tmp3]) |
-                                    ({RS_WIDTH{~valid_alu_pos[`tmp3]}} & {RS_WIDTH{valid_alu_pos[`tmp4]}} & select_alu_pos[`tmp4]);
-      assign valid_alu_pos[i_select] = valid_alu_pos[`tmp3] | valid_alu_pos[`tmp4];
+    for (i_select = 1; i_select < RS_SIZE / 4; i_select = i_select + 1) begin
+      assign select_alu1_pos[i_select] = ({RS_WIDTH{valid_alu1_pos[2*i_select]}} & select_alu1_pos[2*i_select]) |
+                                    ({RS_WIDTH{~valid_alu1_pos[2*i_select]}} & {RS_WIDTH{valid_alu1_pos[2*i_select+1]}} & select_alu1_pos[2*i_select+1]);
+      assign valid_alu1_pos[i_select] = valid_alu1_pos[2*i_select] | valid_alu1_pos[2*i_select+1];
     end
+
+    for (i_select = RS_SIZE / 4; i_select < RS_SIZE / 2; i_select = i_select + 1) begin
+      assign select_alu2_pos[i_select] = ({RS_WIDTH{valid_cal[4*i_select-15]}} & (4*i_select-15)) |
+                                    ({RS_WIDTH{~valid_cal[4*i_select-15]}} & {RS_WIDTH{valid_cal[4*i_select-13]}} & (4*i_select-13));
+      assign valid_alu2_pos[i_select] = valid_cal[4*i_select-15] | valid_cal[4*i_select-13];
+    end
+    for (i_select = 1; i_select < RS_SIZE / 4; i_select = i_select + 1) begin
+      assign select_alu2_pos[i_select] = ({RS_WIDTH{valid_alu2_pos[2*i_select]}} & select_alu2_pos[2*i_select]) |
+                                    ({RS_WIDTH{~valid_alu2_pos[2*i_select]}} & {RS_WIDTH{valid_alu2_pos[2*i_select+1]}} & select_alu2_pos[2*i_select+1]);
+      assign valid_alu2_pos[i_select] = valid_alu2_pos[2*i_select] | valid_alu2_pos[2*i_select+1];
+    end
+
     assign full = ~valid_pos[1];
     assign free_pos = select_pos[1];
-    assign valid_alu1_pos = select_alu_pos[2];
-    assign valid_alu2_pos = select_alu_pos[3];
-    assign valid_alu1 = valid_alu_pos[2];
-    assign valid_alu2 = valid_alu_pos[3];
+    assign alu1_pos = select_alu1_pos[1];
+    assign alu2_pos = select_alu2_pos[1];
+    assign valid_alu1 = valid_alu1_pos[1];
+    assign valid_alu2 = valid_alu2_pos[1];
   endgenerate
 
   assign busy_alu_1 = valid_alu1;
-  assign opcode_alu_1 = opcode[valid_alu1_pos];
-  assign lhs_alu_1 = rs_value_1[valid_alu1_pos];
-  assign rhs_alu_1 = rs_value_2[valid_alu1_pos];
-  assign rd_tag_alu_1 = rd_tag[valid_alu1_pos];
+  assign opcode_alu_1 = opcode[alu1_pos];
+  assign lhs_alu_1 = rs_value_1[alu1_pos];
+  assign rhs_alu_1 = rs_value_2[alu1_pos];
+  assign rd_tag_alu_1 = rd_tag[alu1_pos];
 
   assign busy_alu_2 = valid_alu2;
-  assign opcode_alu_2 = opcode[valid_alu2_pos];
-  assign lhs_alu_2 = rs_value_1[valid_alu2_pos];
-  assign rhs_alu_2 = rs_value_2[valid_alu2_pos];
-  assign rd_tag_alu_2 = rd_tag[valid_alu2_pos];
+  assign opcode_alu_2 = opcode[alu2_pos];
+  assign lhs_alu_2 = rs_value_1[alu2_pos];
+  assign rhs_alu_2 = rs_value_2[alu2_pos];
+  assign rd_tag_alu_2 = rd_tag[alu2_pos];
 
 
 
@@ -235,10 +246,10 @@ module reservation_station #(
   always @(posedge clk_in) begin  // send valid instr to ALU when ALU is free, and free the RS line at the same time
     if (~rst_in & rdy_in & ~clear_signal) begin
       if (valid_alu1) begin
-        busy[valid_alu1_pos] <= 1'b0;
+        busy[alu1_pos] <= 1'b0;
       end
       if (valid_alu2) begin
-        busy[valid_alu2_pos] <= 1'b0;
+        busy[alu2_pos] <= 1'b0;
       end
     end
   end
