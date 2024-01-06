@@ -2,6 +2,6 @@ riscv/testspace/*
 
 *.o
 *.vcd
-a.out
+*.date
 
 !.keep

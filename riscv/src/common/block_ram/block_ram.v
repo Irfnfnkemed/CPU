@@ -71,26 +71,14 @@ module single_port_ram_sync
   input  wire [DATA_WIDTH-1:0] din_a,
   output wire [DATA_WIDTH-1:0] dout_a
 );
-reg [31:0]t;
+
 reg [DATA_WIDTH-1:0] ram [2**ADDR_WIDTH-1:0];
 reg [ADDR_WIDTH-1:0] q_addr_a;
-  // integer f;
-  // integer ff;
-  // initial begin
-  //   f  = $fopen("f");
-  //   ff = $fopen("ff");
-  //   t = 0;
-  // end
 
 always @(posedge clk)
   begin
-    //t <= t + 1;
-    if (we)begin
-      ram[addr_a] <= din_a;
-      //  $fdisplay(f, "addr:%h; data:%h", addr_a,din_a);
-      // $fdisplay(ff, "%d: addr:%h; data:%h",t, addr_a,din_a);
-    end
-        
+    if (we)
+        ram[addr_a] <= din_a;
     q_addr_a <= addr_a;
   end
 

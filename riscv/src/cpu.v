@@ -1,16 +1,6 @@
 // RISCV32I CPU top module
 // port modification allowed for debugging purposes
 
-// `include "alu.v"
-// `include "i_cache.v"
-// `include "i_fetch.v"
-// `include "lsb.v"
-// `include "mem_ctrl.v"
-// `include "predictor.v"
-// `include "rf.v"
-// `include "rob.v"
-// `include "rs.v"
-
 module cpu (
     input wire clk_in,  // system clock signal
     input wire rst_in,  // reset signal
