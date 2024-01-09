@@ -139,9 +139,10 @@ module reservation_station #(
   assign rhs_alu_2 = rs_value_2[alu2_pos];
   assign rd_tag_alu_2 = rd_tag[alu2_pos];
 
-
-
   integer i_reset;
+  integer i_alu_1;
+  integer i_alu_2;
+  integer i_lsb;
   always @(posedge clk_in) begin  // reset register file
     if (rst_in | (rdy_in & clear_signal)) begin
       for (i_reset = 0; i_reset < RS_SIZE; i_reset = i_reset + 1) begin
@@ -149,108 +150,93 @@ module reservation_station #(
         rs_valid_1[i_reset] <= 1'b0;
         rs_valid_2[i_reset] <= 1'b0;
       end
-    end
-  end
-
-  always @(posedge clk_in) begin  // issue an instruction, noticting the forwarding of ALU results
-    if (~rst_in & rdy_in & issue & ~clear_signal) begin
-      busy[free_pos]   <= 1'b1;
-      opcode[free_pos] <= opcode_issue;
-      rd_tag[free_pos] <= rd_issue_tag;
-      if (done_alu_1 & ~rs_issue_valid_1 & (tag_alu_1 == rs_issue_tag_1)) begin  // forwarding
-        rs_value_1[free_pos] <= value_alu_1;
-        rs_valid_1[free_pos] <= 1'b1;
-      end else if (done_alu_2 & ~rs_issue_valid_1 & (tag_alu_2 == rs_issue_tag_1)) begin  // forwarding
-        rs_value_1[free_pos] <= value_alu_2;
-        rs_valid_1[free_pos] <= 1'b1;
-      end else if (done_lsb & ~rs_issue_valid_1 & (tag_lsb == rs_issue_tag_1)) begin  // forwarding
-        rs_value_1[free_pos] <= value_lsb;
-        rs_valid_1[free_pos] <= 1'b1;
-      end else begin
-        rs_value_1[free_pos] <= rs_issue_value_1;
-        rs_tag_1[free_pos]   <= rs_issue_tag_1;
-        rs_valid_1[free_pos] <= rs_issue_valid_1;
+    end else if (rdy_in) begin
+      if (issue) begin  // issue an instruction, noticting the forwarding of ALU results
+        busy[free_pos]   <= 1'b1;
+        opcode[free_pos] <= opcode_issue;
+        rd_tag[free_pos] <= rd_issue_tag;
+        if (done_alu_1 & ~rs_issue_valid_1 & (tag_alu_1 == rs_issue_tag_1)) begin  // forwarding
+          rs_value_1[free_pos] <= value_alu_1;
+          rs_valid_1[free_pos] <= 1'b1;
+        end else if (done_alu_2 & ~rs_issue_valid_1 & (tag_alu_2 == rs_issue_tag_1)) begin  // forwarding
+          rs_value_1[free_pos] <= value_alu_2;
+          rs_valid_1[free_pos] <= 1'b1;
+        end else if (done_lsb & ~rs_issue_valid_1 & (tag_lsb == rs_issue_tag_1)) begin  // forwarding
+          rs_value_1[free_pos] <= value_lsb;
+          rs_valid_1[free_pos] <= 1'b1;
+        end else begin
+          rs_value_1[free_pos] <= rs_issue_value_1;
+          rs_tag_1[free_pos]   <= rs_issue_tag_1;
+          rs_valid_1[free_pos] <= rs_issue_valid_1;
+        end
+        if (done_alu_1 & ~rs_issue_valid_2 & (tag_alu_1 == rs_issue_tag_2)) begin  // forwarding
+          rs_value_2[free_pos] <= value_alu_1;
+          rs_valid_2[free_pos] <= 1'b1;
+        end else if (done_alu_2 & ~rs_issue_valid_2 & (tag_alu_2 == rs_issue_tag_2)) begin  // forwarding
+          rs_value_2[free_pos] <= value_alu_2;
+          rs_valid_2[free_pos] <= 1'b1;
+        end else if (done_lsb & ~rs_issue_valid_2 & (tag_lsb == rs_issue_tag_2)) begin  // forwarding
+          rs_value_2[free_pos] <= value_lsb;
+          rs_valid_2[free_pos] <= 1'b1;
+        end else begin
+          rs_value_2[free_pos] <= rs_issue_value_2;
+          rs_tag_2[free_pos]   <= rs_issue_tag_2;
+          rs_valid_2[free_pos] <= rs_issue_valid_2;
+        end
       end
-      if (done_alu_1 & ~rs_issue_valid_2 & (tag_alu_1 == rs_issue_tag_2)) begin  // forwarding
-        rs_value_2[free_pos] <= value_alu_1;
-        rs_valid_2[free_pos] <= 1'b1;
-      end else if (done_alu_2 & ~rs_issue_valid_2 & (tag_alu_2 == rs_issue_tag_2)) begin  // forwarding
-        rs_value_2[free_pos] <= value_alu_2;
-        rs_valid_2[free_pos] <= 1'b1;
-      end else if (done_lsb & ~rs_issue_valid_2 & (tag_lsb == rs_issue_tag_2)) begin  // forwarding
-        rs_value_2[free_pos] <= value_lsb;
-        rs_valid_2[free_pos] <= 1'b1;
-      end else begin
-        rs_value_2[free_pos] <= rs_issue_value_2;
-        rs_tag_2[free_pos]   <= rs_issue_tag_2;
-        rs_valid_2[free_pos] <= rs_issue_valid_2;
-      end
-    end
-  end
 
-  integer i_alu_1;
-  always @(posedge clk_in) begin  // flush rs values according to the ALU1 result
-    if (~rst_in & rdy_in & done_alu_1 & ~clear_signal) begin
-      for (i_alu_1 = 0; i_alu_1 < RS_SIZE; i_alu_1 = i_alu_1 + 1) begin
-        if (busy[i_alu_1]) begin
-          if (~rs_valid_1[i_alu_1] & (rs_tag_1[i_alu_1] == tag_alu_1)) begin
-            rs_valid_1[i_alu_1] <= 1'b1;
-            rs_value_1[i_alu_1] <= value_alu_1;
+      if (done_alu_1) begin  // flush rs values according to the ALU1 result
+        for (i_alu_1 = 0; i_alu_1 < RS_SIZE; i_alu_1 = i_alu_1 + 1) begin
+          if (busy[i_alu_1]) begin
+            if (~rs_valid_1[i_alu_1] & (rs_tag_1[i_alu_1] == tag_alu_1)) begin
+              rs_valid_1[i_alu_1] <= 1'b1;
+              rs_value_1[i_alu_1] <= value_alu_1;
+            end
+            if (~rs_valid_2[i_alu_1] & (rs_tag_2[i_alu_1] == tag_alu_1)) begin
+              rs_valid_2[i_alu_1] <= 1'b1;
+              rs_value_2[i_alu_1] <= value_alu_1;
+            end
           end
-          if (~rs_valid_2[i_alu_1] & (rs_tag_2[i_alu_1] == tag_alu_1)) begin
-            rs_valid_2[i_alu_1] <= 1'b1;
-            rs_value_2[i_alu_1] <= value_alu_1;
+        end
+      end
+
+      if (done_alu_2) begin  // flush rs values according to the ALU2 result
+        for (i_alu_2 = 0; i_alu_2 < RS_SIZE; i_alu_2 = i_alu_2 + 1) begin
+          if (busy[i_alu_2]) begin
+            if (~rs_valid_1[i_alu_2] & (rs_tag_1[i_alu_2] == tag_alu_2)) begin
+              rs_valid_1[i_alu_2] <= 1'b1;
+              rs_value_1[i_alu_2] <= value_alu_2;
+            end
+            if (~rs_valid_2[i_alu_2] & (rs_tag_2[i_alu_2] == tag_alu_2)) begin
+              rs_valid_2[i_alu_2] <= 1'b1;
+              rs_value_2[i_alu_2] <= value_alu_2;
+            end
+          end
+        end
+      end
+
+      if (done_lsb) begin  // flush rs values according to the LSB result
+        for (i_lsb = 0; i_lsb < RS_SIZE; i_lsb = i_lsb + 1) begin
+          if (busy[i_lsb]) begin
+            if (~rs_valid_1[i_lsb] & (rs_tag_1[i_lsb] == tag_lsb)) begin
+              rs_valid_1[i_lsb] <= 1'b1;
+              rs_value_1[i_lsb] <= value_lsb;
+            end
+            if (~rs_valid_2[i_lsb] & (rs_tag_2[i_lsb] == tag_lsb)) begin
+              rs_valid_2[i_lsb] <= 1'b1;
+              rs_value_2[i_lsb] <= value_lsb;
+            end
           end
         end
       end
     end
-  end
-
-  integer i_alu_2;
-  always @(posedge clk_in) begin  // flush rs values according to the ALU2 result
-    if (~rst_in & rdy_in & done_alu_2 & ~clear_signal) begin
-      for (i_alu_2 = 0; i_alu_2 < RS_SIZE; i_alu_2 = i_alu_2 + 1) begin
-        if (busy[i_alu_2]) begin
-          if (~rs_valid_1[i_alu_2] & (rs_tag_1[i_alu_2] == tag_alu_2)) begin
-            rs_valid_1[i_alu_2] <= 1'b1;
-            rs_value_1[i_alu_2] <= value_alu_2;
-          end
-          if (~rs_valid_2[i_alu_2] & (rs_tag_2[i_alu_2] == tag_alu_2)) begin
-            rs_valid_2[i_alu_2] <= 1'b1;
-            rs_value_2[i_alu_2] <= value_alu_2;
-          end
-        end
-      end
+    // as tag&data are updated when ALU send back the result, updating when committing is unnecessary
+    // send valid instr to ALU when ALU is free, and free the RS line at the same time
+    if (valid_alu1) begin
+      busy[alu1_pos] <= 1'b0;
     end
-  end
-
-  integer i_lsb;
-  always @(posedge clk_in) begin  // flush rs values according to the LSB result
-    if (~rst_in & rdy_in & done_lsb & ~clear_signal) begin
-      for (i_lsb = 0; i_lsb < RS_SIZE; i_lsb = i_lsb + 1) begin
-        if (busy[i_lsb]) begin
-          if (~rs_valid_1[i_lsb] & (rs_tag_1[i_lsb] == tag_lsb)) begin
-            rs_valid_1[i_lsb] <= 1'b1;
-            rs_value_1[i_lsb] <= value_lsb;
-          end
-          if (~rs_valid_2[i_lsb] & (rs_tag_2[i_lsb] == tag_lsb)) begin
-            rs_valid_2[i_lsb] <= 1'b1;
-            rs_value_2[i_lsb] <= value_lsb;
-          end
-        end
-      end
-    end
-  end
-
-  // as tag&data are updated when ALU send back the result, updating when committing is unnecessary
-  always @(posedge clk_in) begin  // send valid instr to ALU when ALU is free, and free the RS line at the same time
-    if (~rst_in & rdy_in & ~clear_signal) begin
-      if (valid_alu1) begin
-        busy[alu1_pos] <= 1'b0;
-      end
-      if (valid_alu2) begin
-        busy[alu2_pos] <= 1'b0;
-      end
+    if (valid_alu2) begin
+      busy[alu2_pos] <= 1'b0;
     end
   end
 

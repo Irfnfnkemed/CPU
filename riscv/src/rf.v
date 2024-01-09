@@ -21,7 +21,6 @@ module register_file #(
     output wire rs_valid_2,
     output wire [31:0] value_x1,  // the value of x1 reg, for predicting JALR
 
-
     // from rob (commit)
     input wire rob_commit_signal,  //1 for committing
     input wire [31:0] commit_rd_value,
@@ -45,6 +44,7 @@ module register_file #(
   assign value_x1 = values[1];
 
   integer i_reset;
+  integer i_clear;
   always @(posedge clk_in) begin  // reset register file
     if (rst_in) begin
       for (i_reset = 0; i_reset < 32; i_reset = i_reset + 1) begin
@@ -52,68 +52,26 @@ module register_file #(
         tags[i_reset]   <= {ROB_WIDTH{1'b0}};
         valid[i_reset]  <= 1'b1;
       end
-    end
-  end
+    end else if (rdy_in) begin
+      if (clear_signal) begin  // clear register file's tags
+        for (i_clear = 0; i_clear < 32; i_clear = i_clear + 1) begin
+          tags[i_clear]  <= {ROB_WIDTH{1'b0}};
+          valid[i_clear] <= 1'b1;
+        end
+      end
 
-  integer i_clear;
-  always @(posedge clk_in) begin  // clear register file's tags
-    if (~rst_in & rdy_in & clear_signal) begin
-      for (i_clear = 0; i_clear < 32; i_clear = i_clear + 1) begin
-        tags[i_clear]  <= {ROB_WIDTH{1'b0}};
-        valid[i_clear] <= 1'b1;
+      if (instr_signal & ~clear_signal & ~(rd_id == 0)) begin  // overwrite the tag of rd (if rd is 0th reg, ignore)
+        valid[rd_id] <= 1'b0;
+        tags[rd_id]  <= rd_tag;
+      end
+      // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
+      if (rob_commit_signal & ~(commit_rd_id == 0)) begin  // 0th reg cannot be modified
+        values[commit_rd_id] <= commit_rd_value;
+        if (~clear_signal) begin  // if clearing, the valid bit is always set to 1
+          valid[commit_rd_id]  <= ~valid[commit_rd_id] & (commit_rd_tag == tags[commit_rd_id]) & ~(instr_signal & (rd_id == commit_rd_id));
+        end
       end
     end
   end
-
-  always @(posedge clk_in) begin  // overwrite the tag of rd (if rd is 0th reg, ignore)
-    if (~rst_in & rdy_in & instr_signal & ~clear_signal & ~(rd_id == 0)) begin
-      valid[rd_id] <= 1'b0;
-      tags[rd_id]  <= rd_tag;
-    end
-  end
-
-  always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
-    if (~rst_in & rdy_in & rob_commit_signal & ~(commit_rd_id == 0)) begin  // 0th reg cannot be modified
-      values[commit_rd_id] <= commit_rd_value;
-      if (~clear_signal) begin // if clearing, the valid bit is always set to 1
-        valid[commit_rd_id]  <= ~valid[commit_rd_id] & (commit_rd_tag == tags[commit_rd_id]) & ~(instr_signal & (rd_id == commit_rd_id));
-      end
-    end
-  end
-
-  // integer f;
-  // integer ff;
-  // initial begin
-  //   f  = $fopen("f");
-  //   ff = $fopen("ff");
-  //   t  = 0;
-  // end
-
-  // // integer i;
-  // // always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
-  // //   if (~rst_in & rdy_in) begin  // 0th reg cannot be modified
-  // //     //$fdisplay(f, "signal:%d,commit_tag:%d", rob_commit_signal, commit_rd_tag);
-  // //     $fdisplay(f,"");
-  // //     for (i = 1; i < 32; i = i + 1) begin
-  // //       $fdisplay(f, "%d:%d, tag:%d, valid:%d", i, values[i], tags[i], valid[i]);
-  // //     end
-  // //   end
-  // // end
-
-  // integer i;
-  // always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
-  //   t <= t + 1;
-  //   if (~rst_in & rdy_in & rob_commit_signal) begin  // 0th reg cannot be modified
-  //     //$fdisplay(f, "signal:%d,commit_tag:%d", rob_commit_signal, commit_rd_tag);
-  //     $fdisplay(f, "");
-  //     for (i = 1; i < 32; i = i + 1) begin
-  //       $fdisplay(f, "%d:%h", i, values[i]);
-  //     end
-  //     $fdisplay(ff, "%d", t);
-  //     for (i = 1; i < 32; i = i + 1) begin
-  //       $fdisplay(ff, "%d:%h", i, values[i]);
-  //     end
-  //   end
-  // end
 
 endmodule

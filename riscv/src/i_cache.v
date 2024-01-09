@@ -52,36 +52,30 @@ module instr_cache #(
         valid[i_reset] <= 1'b0;
         tag[i_reset]   <= {TAG_WIDTH{1'b0}};
       end
-    end
-  end
-
-  always @(posedge clk_in) begin
-    if (~rst_in & rdy_in & clear_signal) begin  // end the request of instruction fetch
-      status <= `FREE_STATUS;
-      mem_signal <= 1'b0;
-    end
-  end
-
-  always @(posedge clk_in) begin
-    if (~rst_in & rdy_in & ~clear_signal) begin
-      case (status)
-        `FREE_STATUS: begin
-          if (fetch_signal & ~fetch_done) begin  // not hit in cache, send to mem-controller
-            status <= `MEM_FETCH_STATUS;
-            mem_signal <= 1'b1;
-            mem_addr <= fetch_addr & 32'hFFFFFFFB; // set instr address to the low pos in a line (whose bs is 0)
+    end else if (rdy_in) begin
+      if (clear_signal) begin  // end the request of instruction fetch
+        status <= `FREE_STATUS;
+        mem_signal <= 1'b0;
+      end else begin
+        case (status)
+          `FREE_STATUS: begin
+            if (fetch_signal & ~fetch_done) begin  // not hit in cache, send to mem-controller
+              status <= `MEM_FETCH_STATUS;
+              mem_signal <= 1'b1;
+              mem_addr <= fetch_addr & 32'hFFFFFFFB; // set instr address to the low pos in a line (whose bs is 0)
+            end
           end
-        end
-        `MEM_FETCH_STATUS: begin
-          if (mem_done) begin
-            status <= `FREE_STATUS;
-            mem_signal <= 1'b0;
-            valid[fetch_index] <= 1'b1;
-            tag[fetch_index] <= fetch_tag;
-            data[fetch_index] <= mem_data;
+          `MEM_FETCH_STATUS: begin
+            if (mem_done) begin
+              status <= `FREE_STATUS;
+              mem_signal <= 1'b0;
+              valid[fetch_index] <= 1'b1;
+              tag[fetch_index] <= fetch_tag;
+              data[fetch_index] <= mem_data;
+            end
           end
-        end
-      endcase
+        endcase
+      end
     end
   end
 

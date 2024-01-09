@@ -1,6 +1,3 @@
-`ifndef ROB
-`define ROB
-
 `define REG_INSTR 2'b00
 `define STORE_INSTR 2'b01
 `define BRANCH_INSTR 2'b10
@@ -97,16 +94,10 @@ module reorder_buffer #(
   assign rob_ready_rs1 = busy[rob_tag_rs1] & ready[rob_tag_rs1];
   assign rob_ready_rs2 = busy[rob_tag_rs2] & ready[rob_tag_rs2];
 
-  reg [31:0] c;
-  reg [31:0] w;
-
-  always @(posedge clk_in)
-    if (rst_in) begin
-      c = 0;
-      w = 0;
-    end
-
   integer i_reset;
+  integer i_alu1;
+  integer i_alu2;
+  integer i_lsb_load;
   always @(posedge clk_in) begin
     if (rst_in | (rdy_in & clear_signal)) begin
       clear_signal <= 1'b0;
@@ -124,33 +115,17 @@ module reorder_buffer #(
       reg_done <= 1'b0;
       lsb_done <= 1'b0;
       predictor_signal <= 1'b0;
-    end
-  end
+    end else if (rdy_in) begin
+      if (issue_signal) begin  // issue instr
+        busy[rear_rob] <= 1'b1;
+        ready[rear_rob] <= issue_value_ready;
+        opcode[rear_rob] <= issue_opcode;
+        rd_id[rear_rob] <= issue_rd_id;
+        rear_rob <= rear_rob + 1;
+        value[rear_rob] <= issue_value;
+      end
 
-  always @(posedge clk_in) begin
-    if (~rst_in & rdy_in & issue_signal & ~clear_signal) begin  // issue instr
-      busy[rear_rob] <= 1'b1;
-      ready[rear_rob] <= issue_value_ready;
-      opcode[rear_rob] <= issue_opcode;
-      rd_id[rear_rob] <= issue_rd_id;
-      rear_rob <= rear_rob + 1;
-
-      value[rear_rob] <= issue_value;
-
-      // if (issue_opcode == `JALR_INSTR) begin  // push to JALR queue
-      //   pc_next_jalr[rear_jalr] <= issue_value;
-      //   pc_prediction_jalr[rear_jalr] <= issue_pc_prediction;
-      //   busy_jalr[rear_jalr] <= 1'b1;
-      //   rear_jalr <= rear_jalr + 1;
-      // end else begin
-      //   value[rear_rob] <= issue_value;
-      // end
-    end
-  end
-
-  always @(posedge clk_in) begin  // commit an instr
-    if (~rst_in & rdy_in & ~clear_signal) begin
-      if (busy[front_rob] & ready[front_rob]) begin
+      if (busy[front_rob] & ready[front_rob]) begin  // commit an instr
         busy[front_rob] <= 1'b0;
         front_rob <= front_rob + 1;
         case (opcode[front_rob])
@@ -176,10 +151,8 @@ module reorder_buffer #(
             if (value[front_rob][1] ^ value[front_rob][0]) begin  // predict wrongly
               clear_signal <= 1'b1;
               correct_pc   <= value[front_rob] & 32'h0003FFFC;  // set high bits and last two bits to 0
-              w <= w + 1;
             end else begin
               clear_signal <= 1'b0;
-              c <= c + 1;
             end
             predictor_signal <= 1'b1;
             predictor_branch <= value[front_rob][0];
@@ -193,8 +166,6 @@ module reorder_buffer #(
             lsb_done <= 1'b0;
             clear_signal <= 1'b0;
             predictor_signal <= 1'b0;
-
-
             // reg_done <= 1'b1;
             // reg_value <= pc_next_jalr[front_jalr];  // send PC+4 to rd
             // reg_tag <= front_rob;
@@ -209,8 +180,6 @@ module reorder_buffer #(
             // end
             // lsb_done <= 1'b0;
             // predictor_signal <= 1'b0;
-
-            
           end
         endcase
       end else begin  // reset the signals, avoiding handling the signals for more than one time
@@ -219,41 +188,81 @@ module reorder_buffer #(
         clear_signal <= 1'b0;
         predictor_signal <= 1'b0;
       end
-    end
-  end
 
-  always @(posedge clk_in) begin  // update value from ALU1
-    if (~rst_in & rdy_in & alu1_done & ~clear_signal & ~ready[alu1_tag]) begin
-      ready[alu1_tag] <= 1'b1;
-      if (opcode[alu1_tag] == `BRANCH_INSTR) begin
-        value[alu1_tag][0] <= alu1_value[0]; // the bool result is place in the highest bit                                                                        
-      end else begin
-        value[alu1_tag] <= alu1_value;
+      if (alu1_done) begin  // update value from ALU1
+        for (i_alu1 = 0; i_alu1 < ROB_SIZE; i_alu1 = i_alu1 + 1) begin
+          if (~ready[i_alu1] & (alu1_tag == i_alu1)) begin
+            ready[i_alu1] <= 1'b1;
+            if (opcode[i_alu1] == `BRANCH_INSTR) begin
+              value[i_alu1][0] <= alu1_value[0]; // the bool result is place in the highest bit                                                                        
+            end else begin
+              value[i_alu1] <= alu1_value;
+            end
+          end
+        end
+      end
+
+      if (alu2_done) begin  // update value from ALU2
+        for (i_alu2 = 0; i_alu2 < ROB_SIZE; i_alu2 = i_alu2 + 1) begin
+          if (~ready[i_alu2] & (alu2_tag == i_alu2)) begin
+            ready[i_alu2] <= 1'b1;
+            if (opcode[i_alu2] == `BRANCH_INSTR) begin
+              value[i_alu2][0] <= alu2_value[0]; // the bool result is place in the highest bit                                                                        
+            end else begin
+              value[i_alu2] <= alu2_value;
+            end
+          end
+        end
+      end
+
+      if (lsb_load_done) begin  // update value from LSB
+        for (i_lsb_load = 0; i_lsb_load < ROB_SIZE; i_lsb_load = i_lsb_load + 1) begin
+          if (~ready[i_lsb_load] & (lsb_load_tag == i_lsb_load)) begin
+            ready[i_lsb_load] <= 1'b1;
+            if (opcode[i_lsb_load] == `BRANCH_INSTR) begin
+              value[i_lsb_load][0] <= lsb_load_value[0]; // the bool result is place in the highest bit                                                                        
+            end else begin
+              value[i_lsb_load] <= lsb_load_value;
+            end
+          end
+        end
       end
     end
   end
 
-  always @(posedge clk_in) begin  // update value from ALU2
-    if (~rst_in & rdy_in & alu2_done & ~clear_signal & ~ready[alu2_tag]) begin
-      ready[alu2_tag] <= 1'b1;
-      if (opcode[alu2_tag] == `BRANCH_INSTR) begin
-        value[alu2_tag][0] <= alu2_value[0]; // the bool result is place in the highest bit                                                                        
-      end else begin
-        value[alu2_tag] <= alu2_value;
-      end
-    end
-  end
+  // always @(posedge clk_in) begin
+  //     // if (issue_opcode == `JALR_INSTR) begin  // push to JALR queue
+  //     //   pc_next_jalr[rear_jalr] <= issue_value;
+  //     //   pc_prediction_jalr[rear_jalr] <= issue_pc_prediction;
+  //     //   busy_jalr[rear_jalr] <= 1'b1;
+  //     //   rear_jalr <= rear_jalr + 1;
+  //     // end else begin
+  //     //   value[rear_rob] <= issue_value;
+  //     // end
+  // end
 
-  always @(posedge clk_in) begin  // update value from LSB
-    if (~rst_in & rdy_in & lsb_load_done & ~clear_signal & ~ready[lsb_load_tag]) begin
-      ready[lsb_load_tag] <= 1'b1;
-      if (opcode[lsb_load_tag] == `BRANCH_INSTR) begin
-        value[lsb_load_tag][0] <= lsb_load_value[0]; // the bool result is place in the highest bit                                                                        
-      end else begin
-        value[lsb_load_tag] <= lsb_load_value;
-      end
-    end
-  end
+
+  // always @(posedge clk_in) begin  // update value from ALU2
+  //   if (~rst_in & rdy_in & alu2_done & ~clear_signal & ~ready[alu2_tag]) begin
+  //     ready[alu2_tag] <= 1'b1;
+  //     if (opcode[alu2_tag] == `BRANCH_INSTR) begin
+  //       value[alu2_tag][0] <= alu2_value[0]; // the bool result is place in the highest bit                                                                        
+  //     end else begin
+  //       value[alu2_tag] <= alu2_value;
+  //     end
+  //   end
+  // end
+
+  // always @(posedge clk_in) begin  // update value from LSB
+  //   if (~rst_in & rdy_in & lsb_load_done & ~clear_signal & ~ready[lsb_load_tag]) begin
+  //     ready[lsb_load_tag] <= 1'b1;
+  //     if (opcode[lsb_load_tag] == `BRANCH_INSTR) begin
+  //       value[lsb_load_tag][0] <= lsb_load_value[0]; // the bool result is place in the highest bit                                                                        
+  //     end else begin
+  //       value[lsb_load_tag] <= lsb_load_value;
+  //     end
+  //   end
+  // end
 
   // integer f;
   // initial begin
@@ -269,6 +278,4 @@ module reorder_buffer #(
   //     end
   //   end
   // end
-
 endmodule
-`endif

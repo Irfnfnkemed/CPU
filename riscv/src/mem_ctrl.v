@@ -44,20 +44,12 @@ module memory_controller (
       mem_wr <= 1'b0;
       instr_done <= 1'b0;
       lsb_done <= 1'b0;
-    end
-  end
-
-  always @(posedge clk_in) begin  // pause CPU, set mem_wr to READ to avoid writing wrongly
-    if (~rst_in & ~rdy_in) begin
+    end else if (~rdy_in) begin  // pause CPU, set mem_wr to READ to avoid writing wrongly
       mem_a <= 32'h00000000;
       mem_wr <= 1'b0;
       instr_done <= 1'b0;
       lsb_done <= 1'b0;
-    end
-  end
-
-  always @(posedge clk_in) begin
-    if (~rst_in & rdy_in) begin
+    end else begin
       case (status)
         `FREE_STATUS: begin
           instr_done <= 1'b0;
@@ -172,7 +164,7 @@ module memory_controller (
             end else begin
               stage <= stage + 1;
             end
-          end else begin // avoiding store when io_buffer_full is 1
+          end else begin  // avoiding store when io_buffer_full is 1
             mem_a <= 32'h00000000;
             mem_wr <= 1'b0;
             instr_done <= 1'b0;
@@ -182,5 +174,4 @@ module memory_controller (
       endcase
     end
   end
-
 endmodule

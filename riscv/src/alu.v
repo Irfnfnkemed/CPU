@@ -38,7 +38,7 @@ module alu #(
 );
 
 
-  wire [31:0] calculate[15:0];
+  wire [31:0] calculate[15:1];
 
   assign calculate[`AND]  = lhs & rhs;
   assign calculate[`OR]   = lhs | rhs;
@@ -59,11 +59,7 @@ module alu #(
   always @(posedge clk_in) begin  // reset alu status to free
     if (rst_in | (rdy_in & clear_signal)) begin
       done_result <= 1'b0;
-    end
-  end
-
-  always @(posedge clk_in) begin  // send the result
-    if (~rst_in & rdy_in) begin
+    end else if (rdy_in) begin  // send the result
       if (cal_signal) begin // don't calculate one task for more than one time, because it won't do continuous calculation
         done_result  <= 1'b1;
         value_result <= calculate[opcode];
@@ -73,5 +69,4 @@ module alu #(
       end
     end
   end
-
 endmodule

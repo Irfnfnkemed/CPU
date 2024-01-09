@@ -156,387 +156,384 @@ module instr_fetch #(
       lsb_issue_signal <= 1'b0;
       rob_value_ready <= 1'b0;
       rob_value <= 32'h00000000;
-    end
-  end
-
-  always @(posedge clk_in) begin
-    if (~rst_in & rdy_in & clear_signal) begin
-      pc <= correct_pc;  // change next pc to correct pos
-      rs_issue_signal <= 1'b0;  // stop issuing
-      rob_issue_signal <= 1'b0;
-      lsb_issue_signal <= 1'b0;
-    end
-  end
-
-  always @(posedge clk_in) begin
-    if (~rst_in & rdy_in & ~clear_signal) begin
-      if (fetch_done & ~rob_full & ~rs_full & ~lsb_full) begin
-        case (fetch_instr[6:0])
-          7'b0110111: begin  // LUI
-            pc <= pc + 4;
-            rob_issue_signal <= 1'b1;
-            rob_opcode <= `ROB_REG_INSTR;
-            rob_value_ready <= 1'b1;
-            rob_value <= {fetch_instr[31:12], {12{1'b0}}};
-            rob_rd_id <= rf_id_rd;
-            rs_issue_signal <= 1'b0;
-            lsb_issue_signal <= 1'b0;
-          end
-          7'b0010111: begin  // AUIPC
-            pc <= pc + 4;
-            rob_issue_signal <= 1'b1;
-            rob_opcode <= `ROB_REG_INSTR;
-            rob_value_ready <= 1'b1;
-            rob_value <= pc + {fetch_instr[31:12], {12{1'b0}}};
-            rob_rd_id <= rf_id_rd;
-            rs_issue_signal <= 1'b0;
-            lsb_issue_signal <= 1'b0;
-          end
-          7'b1101111: begin  // JAL
-            rob_issue_signal <= 1'b1;
-            rob_opcode <= `ROB_REG_INSTR;
-            rob_value_ready <= 1'b1;
-            rob_value <= pc + 4;
-            rob_rd_id <= rf_id_rd;
-            pc <= pc + {{12{fetch_instr[31]}}, fetch_instr[19:12], fetch_instr[20], fetch_instr[30:21], 1'b0};
-            rs_issue_signal <= 1'b0;
-            lsb_issue_signal <= 1'b0;
-          end
-          7'b1100111: begin  // JALR
-            rob_opcode <= `ROB_JALR_INSTR;
-            rob_value_ready <= 1'b1;
-            rob_value <= pc + 4;
-            rob_rd_id <= rf_id_rd;
-            rs_issue_signal <= 1'b0;
-            lsb_issue_signal <= 1'b0;
-            if (~valid_rs1) begin
-              if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
-                rob_issue_signal <= 1'b1;
-                pc <= (alu1_done_value + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
-              end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
-                rob_issue_signal <= 1'b1;
-                pc <= (alu2_done_value + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
-              end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
-                rob_issue_signal <= 1'b1;
-                pc <= (lsb_done_value + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
-              end else begin
-                rob_issue_signal <= 1'b0;
-              end
-            end else begin
-              rob_issue_signal <= 1'b1;
-              pc <= (value_rs1 + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
-            end
-          end
-          7'b1100011: begin  // BRANCH
-            rob_issue_signal <= 1'b1;
-            rob_opcode <= `ROB_BRANCH_INSTR;
-            rob_value_ready <= 1'b0;
-            rob_value[31:32-LOCAL_WIDTH] <= predict_addr;
-            if (predict_jump) begin
-              pc <= pc_next_with_jump;
-              rob_value[31-LOCAL_WIDTH:2] <= pc_next_without_jump[31-LOCAL_WIDTH:2];
-              rob_value[1:0] <= 2'b10;  // set rob_value[1] = 1 (predict-result)
-            end else begin
-              pc <= pc_next_without_jump;
-              rob_value[31-LOCAL_WIDTH:2] <= pc_next_with_jump[31-LOCAL_WIDTH:2];
-              rob_value[1:0] <= 2'b00;  // set rob_value[1] = 0 (predict-result)
-            end
-            rs_issue_signal <= 1'b1;
-            rs_tag_rs1 <= rf_tag_rs1;
-            rs_tag_rs2 <= rf_tag_rs2;
-            rs_tag_rd <= rf_tag_rd;
-            if (~valid_rs1) begin
-              if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
-                rs_value_rs1 <= alu1_done_value;
-                rs_valid_rs1 <= 1'b1;
-              end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
-                rs_value_rs1 <= alu2_done_value;
-                rs_valid_rs1 <= 1'b1;
-              end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
-                rs_value_rs1 <= lsb_done_value;
-                rs_valid_rs1 <= 1'b1;
-              end else begin
-                rs_valid_rs1 <= 1'b0;
-              end
-            end else begin
-              rs_value_rs1 <= value_rs1;
-              rs_valid_rs1 <= 1'b1;
-            end
-            if (~valid_rs2) begin
-              if (alu1_done_signal & (rf_tag_rs2 == alu1_done_tag)) begin
-                rs_value_rs2 <= alu1_done_value;
-                rs_valid_rs2 <= 1'b1;
-              end else if (alu2_done_signal & (rf_tag_rs2 == alu2_done_tag)) begin
-                rs_value_rs2 <= alu2_done_value;
-                rs_valid_rs2 <= 1'b1;
-              end else if (lsb_done_signal & (rf_tag_rs2 == lsb_done_tag)) begin
-                rs_value_rs2 <= lsb_done_value;
-                rs_valid_rs2 <= 1'b1;
-              end else begin
-                rs_valid_rs2 <= 1'b0;
-              end
-            end else begin
-              rs_value_rs2 <= value_rs2;
-              rs_valid_rs2 <= 1'b1;
-            end
-            case (fetch_instr[14:12])
-              3'b000: begin
-                rs_opcode <= `ALU_EQ;
-              end
-              3'b001: begin
-                rs_opcode <= `ALU_NE;
-              end
-              3'b100: begin
-                rs_opcode <= `ALU_LT;
-              end
-              3'b101: begin
-                rs_opcode <= `ALU_GE;
-              end
-              3'b110: begin
-                rs_opcode <= `ALU_LTU;
-              end
-              3'b111: begin
-                rs_opcode <= `ALU_GEU;
-              end
-            endcase
-            lsb_issue_signal <= 1'b0;
-          end
-          7'b0000011: begin  // LOAD
-            pc <= pc + 4;
-            rob_issue_signal <= 1'b1;
-            rob_opcode <= `ROB_REG_INSTR;
-            rob_rd_id <= rf_id_rd;
-            rob_value_ready <= 1'b0;
-            rs_issue_signal <= 1'b0;
-            lsb_issue_signal <= 1'b1;
-            lsb_wr <= 1'b0;
-            lsb_signed <= ~fetch_instr[14];
-            lsb_offset <= fetch_instr[31:20];
-            lsb_tag_addr <= rf_tag_rs1;
-            lsb_tag_rd <= rf_tag_rd;
-            if (~valid_rs1) begin
-              if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
-                lsb_addr <= alu1_done_value;
-                lsb_valid_addr <= 1'b1;
-              end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
-                lsb_addr <= alu2_done_value;
-                lsb_valid_addr <= 1'b1;
-              end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
-                lsb_addr <= lsb_done_value;
-                lsb_valid_addr <= 1'b1;
-              end else begin
-                lsb_valid_addr <= 1'b0;
-              end
-            end else begin
-              lsb_addr <= value_rs1;
-              lsb_valid_addr <= 1'b1;
-            end
-            case (fetch_instr[13:12])
-              3'b00: begin
-                lsb_len <= 2'b00;
-              end
-              3'b01: begin
-                lsb_len <= 2'b01;
-              end
-              3'b10: begin
-                lsb_len <= 2'b11;
-              end
-            endcase
-          end
-          7'b0100011: begin  // STORE
-            pc <= pc + 4;
-            rob_issue_signal <= 1'b1;
-            rob_opcode <= `ROB_STORE_INSTR;
-            rob_value_ready <= 1'b1;
-            rs_issue_signal <= 1'b0;
-            lsb_issue_signal <= 1'b1;
-            lsb_wr <= 1'b1;
-            lsb_offset <= {fetch_instr[31:25], fetch_instr[11:7]};
-            lsb_tag_addr <= rf_tag_rs1;
-            lsb_tag_value <= rf_tag_rs2;
-            lsb_tag_rd <= rf_tag_rd;
-            if (~valid_rs1) begin
-              if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
-                lsb_addr <= alu1_done_value;
-                lsb_valid_addr <= 1'b1;
-              end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
-                lsb_addr <= alu2_done_value;
-                lsb_valid_addr <= 1'b1;
-              end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
-                lsb_addr <= lsb_done_value;
-                lsb_valid_addr <= 1'b1;
-              end else begin
-                lsb_valid_addr <= 1'b0;
-              end
-            end else begin
-              lsb_addr <= value_rs1;
-              lsb_valid_addr <= 1'b1;
-            end
-            if (~valid_rs2) begin
-              if (alu1_done_signal & (rf_tag_rs2 == alu1_done_tag)) begin
-                lsb_value <= alu1_done_value;
-                lsb_valid_value <= 1'b1;
-              end else if (alu2_done_signal & (rf_tag_rs2 == alu2_done_tag)) begin
-                lsb_value <= alu2_done_value;
-                lsb_valid_value <= 1'b1;
-              end else if (lsb_done_signal & (rf_tag_rs2 == lsb_done_tag)) begin
-                lsb_value <= lsb_done_value;
-                lsb_valid_value <= 1'b1;
-              end else begin
-                lsb_valid_value <= 1'b0;
-              end
-            end else begin
-              lsb_value <= value_rs2;
-              lsb_valid_value <= 1'b1;
-            end
-            case (fetch_instr[13:12])
-              3'b00: begin
-                lsb_len <= 2'b00;
-              end
-              3'b01: begin
-                lsb_len <= 2'b01;
-              end
-              3'b10: begin
-                lsb_len <= 2'b11;
-              end
-            endcase
-          end
-          7'b0010011: begin
-            pc <= pc + 4;
-            rob_issue_signal <= 1'b1;
-            rob_opcode <= `ROB_REG_INSTR;
-            rob_rd_id <= rf_id_rd;
-            rob_value_ready <= 1'b0;
-            rs_issue_signal <= 1'b1;
-            rs_value_rs2 <= {{20{fetch_instr[31]}}, fetch_instr[31:20]};
-            rs_tag_rs1 <= rf_tag_rs1;
-            rs_valid_rs2 <= 1'b1;
-            rs_tag_rd <= rf_tag_rd;
-            if (~valid_rs1) begin
-              if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
-                rs_value_rs1 <= alu1_done_value;
-                rs_valid_rs1 <= 1'b1;
-              end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
-                rs_value_rs1 <= alu2_done_value;
-                rs_valid_rs1 <= 1'b1;
-              end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
-                rs_value_rs1 <= lsb_done_value;
-                rs_valid_rs1 <= 1'b1;
-              end else begin
-                rs_valid_rs1 <= 1'b0;
-              end
-            end else begin
-              rs_value_rs1 <= value_rs1;
-              rs_valid_rs1 <= 1'b1;
-            end
-            case (fetch_instr[14:12])
-              3'b000: begin
-                rs_opcode <= `ALU_ADD;
-              end
-              3'b001: begin
-                rs_opcode <= `ALU_SLL;
-              end
-              3'b010: begin
-                rs_opcode <= `ALU_LT;
-              end
-              3'b011: begin
-                rs_opcode <= `ALU_LTU;
-              end
-              3'b100: begin
-                rs_opcode <= `ALU_XOR;
-              end
-              3'b101: begin
-                rs_opcode <= fetch_instr[30] ? `ALU_SRA : `ALU_SRL;
-              end
-              3'b110: begin
-                rs_opcode <= `ALU_OR;
-              end
-              3'b111: begin
-                rs_opcode <= `ALU_AND;
-              end
-            endcase
-            lsb_issue_signal <= 1'b0;
-          end
-          7'b0110011: begin
-            pc <= pc + 4;
-            rob_issue_signal <= 1'b1;
-            rob_opcode <= `ROB_REG_INSTR;
-            rob_rd_id <= rf_id_rd;
-            rob_value_ready <= 1'b0;
-            rs_issue_signal <= 1'b1;
-            rs_tag_rs1 <= rf_tag_rs1;
-            rs_tag_rs2 <= rf_tag_rs2;
-            rs_tag_rd <= rf_tag_rd;
-            if (~valid_rs1) begin
-              if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
-                rs_value_rs1 <= alu1_done_value;
-                rs_valid_rs1 <= 1'b1;
-              end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
-                rs_value_rs1 <= alu2_done_value;
-                rs_valid_rs1 <= 1'b1;
-              end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
-                rs_value_rs1 <= lsb_done_value;
-                rs_valid_rs1 <= 1'b1;
-              end else begin
-                rs_valid_rs1 <= 1'b0;
-              end
-            end else begin
-              rs_value_rs1 <= value_rs1;
-              rs_valid_rs1 <= 1'b1;
-            end
-            if (~valid_rs2) begin
-              if (alu1_done_signal & (rf_tag_rs2 == alu1_done_tag)) begin
-                rs_value_rs2 <= alu1_done_value;
-                rs_valid_rs2 <= 1'b1;
-              end else if (alu2_done_signal & (rf_tag_rs2 == alu2_done_tag)) begin
-                rs_value_rs2 <= alu2_done_value;
-                rs_valid_rs2 <= 1'b1;
-              end else if (lsb_done_signal & (rf_tag_rs2 == lsb_done_tag)) begin
-                rs_value_rs2 <= lsb_done_value;
-                rs_valid_rs2 <= 1'b1;
-              end else begin
-                rs_valid_rs2 <= 1'b0;
-              end
-            end else begin
-              rs_value_rs2 <= value_rs2;
-              rs_valid_rs2 <= 1'b1;
-            end
-            case (fetch_instr[14:12])
-              3'b000: begin
-                rs_opcode <= fetch_instr[30] ? `ALU_SUB : `ALU_ADD;
-              end
-              3'b010: begin
-                rs_opcode <= `ALU_LT;
-              end
-              3'b011: begin
-                rs_opcode <= `ALU_LTU;
-              end
-              3'b100: begin
-                rs_opcode <= `ALU_XOR;
-              end
-              3'b110: begin
-                rs_opcode <= `ALU_OR;
-              end
-              3'b111: begin
-                rs_opcode <= `ALU_AND;
-              end
-              3'b001: begin
-                rs_opcode <= `ALU_SLL;
-              end
-              3'b101: begin
-                rs_opcode <= fetch_instr[30] ? `ALU_SRA : `ALU_SRL;
-              end
-            endcase
-            lsb_issue_signal <= 1'b0;
-          end
-        endcase
-      end else begin
+    end else if (rdy_in) begin
+      if (clear_signal) begin
+        pc <= correct_pc;  // change next pc to correct pos
+        rs_issue_signal <= 1'b0;  // stop issuing
         rob_issue_signal <= 1'b0;
-        rs_issue_signal  <= 1'b0;
         lsb_issue_signal <= 1'b0;
+      end else begin
+        if (fetch_done & ~rob_full & ~rs_full & ~lsb_full) begin
+          case (fetch_instr[6:0])
+            7'b0110111: begin  // LUI
+              pc <= pc + 4;
+              rob_issue_signal <= 1'b1;
+              rob_opcode <= `ROB_REG_INSTR;
+              rob_value_ready <= 1'b1;
+              rob_value <= {fetch_instr[31:12], {12{1'b0}}};
+              rob_rd_id <= rf_id_rd;
+              rs_issue_signal <= 1'b0;
+              lsb_issue_signal <= 1'b0;
+            end
+            7'b0010111: begin  // AUIPC
+              pc <= pc + 4;
+              rob_issue_signal <= 1'b1;
+              rob_opcode <= `ROB_REG_INSTR;
+              rob_value_ready <= 1'b1;
+              rob_value <= pc + {fetch_instr[31:12], {12{1'b0}}};
+              rob_rd_id <= rf_id_rd;
+              rs_issue_signal <= 1'b0;
+              lsb_issue_signal <= 1'b0;
+            end
+            7'b1101111: begin  // JAL
+              rob_issue_signal <= 1'b1;
+              rob_opcode <= `ROB_REG_INSTR;
+              rob_value_ready <= 1'b1;
+              rob_value <= pc + 4;
+              rob_rd_id <= rf_id_rd;
+              pc <= pc + {{12{fetch_instr[31]}}, fetch_instr[19:12], fetch_instr[20], fetch_instr[30:21], 1'b0};
+              rs_issue_signal <= 1'b0;
+              lsb_issue_signal <= 1'b0;
+            end
+            7'b1100111: begin  // JALR
+              rob_opcode <= `ROB_JALR_INSTR;
+              rob_value_ready <= 1'b1;
+              rob_value <= pc + 4;
+              rob_rd_id <= rf_id_rd;
+              rs_issue_signal <= 1'b0;
+              lsb_issue_signal <= 1'b0;
+              if (~valid_rs1) begin
+                if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
+                  rob_issue_signal <= 1'b1;
+                  pc <= (alu1_done_value + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
+                end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
+                  rob_issue_signal <= 1'b1;
+                  pc <= (alu2_done_value + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
+                end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
+                  rob_issue_signal <= 1'b1;
+                  pc <= (lsb_done_value + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
+                end else begin
+                  rob_issue_signal <= 1'b0;
+                end
+              end else begin
+                rob_issue_signal <= 1'b1;
+                pc <= (value_rs1 + {{20{fetch_instr[31]}}, fetch_instr[31:20]}) & 32'hFFFFFFFE;
+              end
+            end
+            7'b1100011: begin  // BRANCH
+              rob_issue_signal <= 1'b1;
+              rob_opcode <= `ROB_BRANCH_INSTR;
+              rob_value_ready <= 1'b0;
+              rob_value[31:32-LOCAL_WIDTH] <= predict_addr;
+              if (predict_jump) begin
+                pc <= pc_next_with_jump;
+                rob_value[31-LOCAL_WIDTH:2] <= pc_next_without_jump[31-LOCAL_WIDTH:2];
+                rob_value[1:0] <= 2'b10;  // set rob_value[1] = 1 (predict-result)
+              end else begin
+                pc <= pc_next_without_jump;
+                rob_value[31-LOCAL_WIDTH:2] <= pc_next_with_jump[31-LOCAL_WIDTH:2];
+                rob_value[1:0] <= 2'b00;  // set rob_value[1] = 0 (predict-result)
+              end
+              rs_issue_signal <= 1'b1;
+              rs_tag_rs1 <= rf_tag_rs1;
+              rs_tag_rs2 <= rf_tag_rs2;
+              rs_tag_rd <= rf_tag_rd;
+              if (~valid_rs1) begin
+                if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
+                  rs_value_rs1 <= alu1_done_value;
+                  rs_valid_rs1 <= 1'b1;
+                end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
+                  rs_value_rs1 <= alu2_done_value;
+                  rs_valid_rs1 <= 1'b1;
+                end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
+                  rs_value_rs1 <= lsb_done_value;
+                  rs_valid_rs1 <= 1'b1;
+                end else begin
+                  rs_valid_rs1 <= 1'b0;
+                end
+              end else begin
+                rs_value_rs1 <= value_rs1;
+                rs_valid_rs1 <= 1'b1;
+              end
+              if (~valid_rs2) begin
+                if (alu1_done_signal & (rf_tag_rs2 == alu1_done_tag)) begin
+                  rs_value_rs2 <= alu1_done_value;
+                  rs_valid_rs2 <= 1'b1;
+                end else if (alu2_done_signal & (rf_tag_rs2 == alu2_done_tag)) begin
+                  rs_value_rs2 <= alu2_done_value;
+                  rs_valid_rs2 <= 1'b1;
+                end else if (lsb_done_signal & (rf_tag_rs2 == lsb_done_tag)) begin
+                  rs_value_rs2 <= lsb_done_value;
+                  rs_valid_rs2 <= 1'b1;
+                end else begin
+                  rs_valid_rs2 <= 1'b0;
+                end
+              end else begin
+                rs_value_rs2 <= value_rs2;
+                rs_valid_rs2 <= 1'b1;
+              end
+              case (fetch_instr[14:12])
+                3'b000: begin
+                  rs_opcode <= `ALU_EQ;
+                end
+                3'b001: begin
+                  rs_opcode <= `ALU_NE;
+                end
+                3'b100: begin
+                  rs_opcode <= `ALU_LT;
+                end
+                3'b101: begin
+                  rs_opcode <= `ALU_GE;
+                end
+                3'b110: begin
+                  rs_opcode <= `ALU_LTU;
+                end
+                3'b111: begin
+                  rs_opcode <= `ALU_GEU;
+                end
+              endcase
+              lsb_issue_signal <= 1'b0;
+            end
+            7'b0000011: begin  // LOAD
+              pc <= pc + 4;
+              rob_issue_signal <= 1'b1;
+              rob_opcode <= `ROB_REG_INSTR;
+              rob_rd_id <= rf_id_rd;
+              rob_value_ready <= 1'b0;
+              rs_issue_signal <= 1'b0;
+              lsb_issue_signal <= 1'b1;
+              lsb_wr <= 1'b0;
+              lsb_signed <= ~fetch_instr[14];
+              lsb_offset <= fetch_instr[31:20];
+              lsb_tag_addr <= rf_tag_rs1;
+              lsb_tag_rd <= rf_tag_rd;
+              if (~valid_rs1) begin
+                if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
+                  lsb_addr <= alu1_done_value;
+                  lsb_valid_addr <= 1'b1;
+                end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
+                  lsb_addr <= alu2_done_value;
+                  lsb_valid_addr <= 1'b1;
+                end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
+                  lsb_addr <= lsb_done_value;
+                  lsb_valid_addr <= 1'b1;
+                end else begin
+                  lsb_valid_addr <= 1'b0;
+                end
+              end else begin
+                lsb_addr <= value_rs1;
+                lsb_valid_addr <= 1'b1;
+              end
+              case (fetch_instr[13:12])
+                3'b00: begin
+                  lsb_len <= 2'b00;
+                end
+                3'b01: begin
+                  lsb_len <= 2'b01;
+                end
+                3'b10: begin
+                  lsb_len <= 2'b11;
+                end
+              endcase
+            end
+            7'b0100011: begin  // STORE
+              pc <= pc + 4;
+              rob_issue_signal <= 1'b1;
+              rob_opcode <= `ROB_STORE_INSTR;
+              rob_value_ready <= 1'b1;
+              rs_issue_signal <= 1'b0;
+              lsb_issue_signal <= 1'b1;
+              lsb_wr <= 1'b1;
+              lsb_offset <= {fetch_instr[31:25], fetch_instr[11:7]};
+              lsb_tag_addr <= rf_tag_rs1;
+              lsb_tag_value <= rf_tag_rs2;
+              lsb_tag_rd <= rf_tag_rd;
+              if (~valid_rs1) begin
+                if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
+                  lsb_addr <= alu1_done_value;
+                  lsb_valid_addr <= 1'b1;
+                end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
+                  lsb_addr <= alu2_done_value;
+                  lsb_valid_addr <= 1'b1;
+                end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
+                  lsb_addr <= lsb_done_value;
+                  lsb_valid_addr <= 1'b1;
+                end else begin
+                  lsb_valid_addr <= 1'b0;
+                end
+              end else begin
+                lsb_addr <= value_rs1;
+                lsb_valid_addr <= 1'b1;
+              end
+              if (~valid_rs2) begin
+                if (alu1_done_signal & (rf_tag_rs2 == alu1_done_tag)) begin
+                  lsb_value <= alu1_done_value;
+                  lsb_valid_value <= 1'b1;
+                end else if (alu2_done_signal & (rf_tag_rs2 == alu2_done_tag)) begin
+                  lsb_value <= alu2_done_value;
+                  lsb_valid_value <= 1'b1;
+                end else if (lsb_done_signal & (rf_tag_rs2 == lsb_done_tag)) begin
+                  lsb_value <= lsb_done_value;
+                  lsb_valid_value <= 1'b1;
+                end else begin
+                  lsb_valid_value <= 1'b0;
+                end
+              end else begin
+                lsb_value <= value_rs2;
+                lsb_valid_value <= 1'b1;
+              end
+              case (fetch_instr[13:12])
+                3'b00: begin
+                  lsb_len <= 2'b00;
+                end
+                3'b01: begin
+                  lsb_len <= 2'b01;
+                end
+                3'b10: begin
+                  lsb_len <= 2'b11;
+                end
+              endcase
+            end
+            7'b0010011: begin
+              pc <= pc + 4;
+              rob_issue_signal <= 1'b1;
+              rob_opcode <= `ROB_REG_INSTR;
+              rob_rd_id <= rf_id_rd;
+              rob_value_ready <= 1'b0;
+              rs_issue_signal <= 1'b1;
+              rs_value_rs2 <= {{20{fetch_instr[31]}}, fetch_instr[31:20]};
+              rs_tag_rs1 <= rf_tag_rs1;
+              rs_valid_rs2 <= 1'b1;
+              rs_tag_rd <= rf_tag_rd;
+              if (~valid_rs1) begin
+                if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
+                  rs_value_rs1 <= alu1_done_value;
+                  rs_valid_rs1 <= 1'b1;
+                end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
+                  rs_value_rs1 <= alu2_done_value;
+                  rs_valid_rs1 <= 1'b1;
+                end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
+                  rs_value_rs1 <= lsb_done_value;
+                  rs_valid_rs1 <= 1'b1;
+                end else begin
+                  rs_valid_rs1 <= 1'b0;
+                end
+              end else begin
+                rs_value_rs1 <= value_rs1;
+                rs_valid_rs1 <= 1'b1;
+              end
+              case (fetch_instr[14:12])
+                3'b000: begin
+                  rs_opcode <= `ALU_ADD;
+                end
+                3'b001: begin
+                  rs_opcode <= `ALU_SLL;
+                end
+                3'b010: begin
+                  rs_opcode <= `ALU_LT;
+                end
+                3'b011: begin
+                  rs_opcode <= `ALU_LTU;
+                end
+                3'b100: begin
+                  rs_opcode <= `ALU_XOR;
+                end
+                3'b101: begin
+                  rs_opcode <= fetch_instr[30] ? `ALU_SRA : `ALU_SRL;
+                end
+                3'b110: begin
+                  rs_opcode <= `ALU_OR;
+                end
+                3'b111: begin
+                  rs_opcode <= `ALU_AND;
+                end
+              endcase
+              lsb_issue_signal <= 1'b0;
+            end
+            7'b0110011: begin
+              pc <= pc + 4;
+              rob_issue_signal <= 1'b1;
+              rob_opcode <= `ROB_REG_INSTR;
+              rob_rd_id <= rf_id_rd;
+              rob_value_ready <= 1'b0;
+              rs_issue_signal <= 1'b1;
+              rs_tag_rs1 <= rf_tag_rs1;
+              rs_tag_rs2 <= rf_tag_rs2;
+              rs_tag_rd <= rf_tag_rd;
+              if (~valid_rs1) begin
+                if (alu1_done_signal & (rf_tag_rs1 == alu1_done_tag)) begin
+                  rs_value_rs1 <= alu1_done_value;
+                  rs_valid_rs1 <= 1'b1;
+                end else if (alu2_done_signal & (rf_tag_rs1 == alu2_done_tag)) begin
+                  rs_value_rs1 <= alu2_done_value;
+                  rs_valid_rs1 <= 1'b1;
+                end else if (lsb_done_signal & (rf_tag_rs1 == lsb_done_tag)) begin
+                  rs_value_rs1 <= lsb_done_value;
+                  rs_valid_rs1 <= 1'b1;
+                end else begin
+                  rs_valid_rs1 <= 1'b0;
+                end
+              end else begin
+                rs_value_rs1 <= value_rs1;
+                rs_valid_rs1 <= 1'b1;
+              end
+              if (~valid_rs2) begin
+                if (alu1_done_signal & (rf_tag_rs2 == alu1_done_tag)) begin
+                  rs_value_rs2 <= alu1_done_value;
+                  rs_valid_rs2 <= 1'b1;
+                end else if (alu2_done_signal & (rf_tag_rs2 == alu2_done_tag)) begin
+                  rs_value_rs2 <= alu2_done_value;
+                  rs_valid_rs2 <= 1'b1;
+                end else if (lsb_done_signal & (rf_tag_rs2 == lsb_done_tag)) begin
+                  rs_value_rs2 <= lsb_done_value;
+                  rs_valid_rs2 <= 1'b1;
+                end else begin
+                  rs_valid_rs2 <= 1'b0;
+                end
+              end else begin
+                rs_value_rs2 <= value_rs2;
+                rs_valid_rs2 <= 1'b1;
+              end
+              case (fetch_instr[14:12])
+                3'b000: begin
+                  rs_opcode <= fetch_instr[30] ? `ALU_SUB : `ALU_ADD;
+                end
+                3'b010: begin
+                  rs_opcode <= `ALU_LT;
+                end
+                3'b011: begin
+                  rs_opcode <= `ALU_LTU;
+                end
+                3'b100: begin
+                  rs_opcode <= `ALU_XOR;
+                end
+                3'b110: begin
+                  rs_opcode <= `ALU_OR;
+                end
+                3'b111: begin
+                  rs_opcode <= `ALU_AND;
+                end
+                3'b001: begin
+                  rs_opcode <= `ALU_SLL;
+                end
+                3'b101: begin
+                  rs_opcode <= fetch_instr[30] ? `ALU_SRA : `ALU_SRL;
+                end
+              endcase
+              lsb_issue_signal <= 1'b0;
+            end
+          endcase
+        end else begin
+          rob_issue_signal <= 1'b0;
+          rs_issue_signal  <= 1'b0;
+          lsb_issue_signal <= 1'b0;
+        end
       end
+
     end
+
   end
+
 
   // integer f;
   //   initial begin
