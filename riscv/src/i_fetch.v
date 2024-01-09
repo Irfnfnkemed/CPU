@@ -1,7 +1,7 @@
 `define ROB_REG_INSTR 2'b00
 `define ROB_STORE_INSTR 2'b01
 `define ROB_BRANCH_INSTR 2'b10
-`define ROB_JALR_INSTR 2'b11
+`define ROB_LOAD_INSTR 2'b11
 `define ALU_NOP 4'd0
 `define ALU_AND 4'd1
 `define ALU_OR 4'd2
@@ -95,7 +95,6 @@ module instr_fetch #(
     output reg [1:0] rob_opcode,
     output reg [31:0] rob_value,
     output reg [4:0] rob_rd_id,
-    output reg [31:0] rob_pc_prediction,  // for JALR (PC+4 is in issue_value)
 
     // issue an instr to LSB
     output reg lsb_issue_signal,  // 1 for issuing
@@ -196,7 +195,7 @@ module instr_fetch #(
               lsb_issue_signal <= 1'b0;
             end
             7'b1100111: begin  // JALR
-              rob_opcode <= `ROB_JALR_INSTR;
+              rob_opcode <= `ROB_REG_INSTR;
               rob_value_ready <= 1'b1;
               rob_value <= pc + 4;
               rob_rd_id <= rf_id_rd;
@@ -297,7 +296,7 @@ module instr_fetch #(
             7'b0000011: begin  // LOAD
               pc <= pc + 4;
               rob_issue_signal <= 1'b1;
-              rob_opcode <= `ROB_REG_INSTR;
+              rob_opcode <= `ROB_LOAD_INSTR;
               rob_rd_id <= rf_id_rd;
               rob_value_ready <= 1'b0;
               rs_issue_signal <= 1'b0;

@@ -229,14 +229,14 @@ module reservation_station #(
           end
         end
       end
-    end
-    // as tag&data are updated when ALU send back the result, updating when committing is unnecessary
-    // send valid instr to ALU when ALU is free, and free the RS line at the same time
-    if (valid_alu1) begin
-      busy[alu1_pos] <= 1'b0;
-    end
-    if (valid_alu2) begin
-      busy[alu2_pos] <= 1'b0;
+      // as tag&data are updated when ALU send back the result, updating when committing is unnecessary
+      // send valid instr to ALU when ALU is free, and free the RS line at the same time
+      if (valid_alu1) begin
+        busy[alu1_pos] <= 1'b0;
+      end
+      if (valid_alu2) begin
+        busy[alu2_pos] <= 1'b0;
+      end
     end
   end
 

@@ -24,8 +24,8 @@ module load_store_buffer #(
     input wire issue_valid_addr,  // 1 for addr valid (tag is invalid)
     input wire issue_valid_value,
 
-    // commited instruction from ROB (only for store)
-    input wire commit_signal,  // 1 for committing a **store instruction** 
+    // commited instruction from ROB (only for store and IO input)
+    input wire commit_signal,  // 1 for committing a store instruction or IO input
     input wire [ROB_WIDTH-1:0] commit_tag,
 
     // send load/store task to memory controller
@@ -120,7 +120,6 @@ module load_store_buffer #(
 
       if (issue_signal & ~clear_signal) begin  // push new instr to rear pos when issuing
         busy[rear] <= 1'b1;
-        ready[rear] <= (issue_valid_addr | hit_addr) & ~issue_wr; // for loading, ready bit is same to valid_addr(considering updation through ALU/MEM result); for storing, ready bit is 0
         wr[rear] <= issue_wr;
         sign[rear] <= issue_signed;
         len[rear] <= issue_len;
@@ -133,21 +132,27 @@ module load_store_buffer #(
           if (mem_done & ~wr[front] & (tag_rd[front] == issue_tag_addr)) begin
             address[rear] <= mem_din;
             valid_addr[rear] <= 1'b1;
+            ready[rear] <= ~issue_wr & ~(mem_din == 32'h30000);
           end else if (done_signal & (done_tag == issue_tag_addr)) begin
             address[rear] <= done_value;
             valid_addr[rear] <= 1'b1;
+            ready[rear] <= ~issue_wr & ~(done_value == 32'h30000);
           end else if (alu1_signal & (alu1_tag == issue_tag_addr)) begin
             address[rear] <= alu1_value;
             valid_addr[rear] <= 1'b1;
+            ready[rear] <= ~issue_wr & ~(alu1_value == 32'h30000);
           end else if (alu2_signal & (alu2_tag == issue_tag_addr)) begin
             address[rear] <= alu2_value;
             valid_addr[rear] <= 1'b1;
+            ready[rear] <= ~issue_wr & ~(alu2_value == 32'h30000);
           end else begin
             valid_addr[rear] <= 1'b0;
+            ready[rear] <= 1'b0;
           end
         end else begin
           address[rear] <= issue_addr;
           valid_addr[rear] <= 1'b1;
+          ready[rear] <= ~issue_wr & ~(issue_addr == 32'h30000);  // for loading, ready bit is same to valid_addr(considering updation through ALU/MEM result); for storing, ready bit is 0
         end
         if (issue_wr & ~issue_valid_value) begin
           if (mem_done & ~wr[front] & (tag_rd[front] == issue_tag_value)) begin
@@ -209,11 +214,15 @@ module load_store_buffer #(
         done_signal <= 1'b0;
       end
 
-      if (commit_signal & ~clear_signal) begin // only set store line to ready, because value&addr should be updated before
+      if (commit_signal & ~clear_signal) begin // only set store line or IO input to ready, because value&addr should be updated before
         for (i_commit = 0; i_commit < LSB_SIZE; i_commit = i_commit + 1) begin
-          if (busy[i_commit] & ~ready[i_commit] & wr[i_commit] & (tag_rd[i_commit] == commit_tag)) begin
-            ready[i_commit]   <= 1'b1;
-            last_store_commit <= i_commit;  // only one line(infact,store) can be modified
+          if (busy[i_commit] & ~ready[i_commit] & (tag_rd[i_commit] == commit_tag)) begin
+            if (wr[i_commit]) begin
+              ready[i_commit]   <= 1'b1;
+              last_store_commit <= i_commit;  // only one line(infact,store) can be modified
+            end else if (valid_addr[i_commit] & (address[i_commit] == 32'h30000)) begin
+              ready[i_commit] <= 1'b1;
+            end
           end
         end
       end
