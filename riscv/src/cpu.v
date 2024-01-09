@@ -348,7 +348,7 @@ module cpu (
       .mem_dout      (mem_dout),
       .mem_a         (mem_a),
       .mem_wr        (mem_wr),
-      .io_buffer_full(io_buffer_full),
+      .io_buffer_full(1'b0),
       .clear_signal  (rob_clear_signal),
       .instr_signal  (memctrl_icache_signal),
       .instr_a       (memctrl_icache_addr),
