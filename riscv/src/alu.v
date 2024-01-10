@@ -48,8 +48,8 @@ module alu #(
   assign calculate[`SRL]  = lhs >> rhs[4:0];
   assign calculate[`SRA]  = lhs >>> rhs[4:0];
   assign calculate[`SLL]  = lhs << rhs[4:0];
-  assign calculate[`LT]   = {32{$signed(lhs) < $signed(rhs)}};
-  assign calculate[`LTU]  = {32{lhs < rhs}};
+  assign calculate[`LT]   = {{31{1'b0}}, {$signed(lhs) < $signed(rhs)}};
+  assign calculate[`LTU]  = {{31{1'b0}}, {lhs < rhs}};
   assign calculate[`EQ]   = {32{lhs == rhs}};
   assign calculate[`NE]   = {32{lhs != rhs}};
   assign calculate[`GE]   = {32{$signed(lhs) >= $signed(rhs)}};
