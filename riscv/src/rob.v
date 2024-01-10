@@ -109,48 +109,82 @@ module reorder_buffer #(
         value[rear_rob] <= issue_value;
       end
 
-      if (busy[front_rob] & ready[front_rob]) begin  // commit an instr
-        busy[front_rob] <= 1'b0;
-        front_rob <= front_rob + 1;
+      if (busy[front_rob]) begin  // commit an instr
         case (opcode[front_rob])
           `REG_INSTR: begin  // commit to RF, RS
-            reg_done <= 1'b1;
-            reg_value <= value[front_rob];
-            reg_tag <= front_rob;
-            reg_id <= rd_id[front_rob];
-            lsb_done <= 1'b0;
-            clear_signal <= 1'b0;
-            predictor_signal <= 1'b0;
+            if (ready[front_rob]) begin
+              busy[front_rob] <= 1'b0;
+              front_rob <= front_rob + 1;
+              reg_done <= 1'b1;
+              reg_value <= value[front_rob];
+              reg_tag <= front_rob;
+              reg_id <= rd_id[front_rob];
+              lsb_done <= 1'b0;
+              clear_signal <= 1'b0;
+              predictor_signal <= 1'b0;
+            end  else begin  // reset the signals, avoiding handling the signals for more than one time
+              reg_done <= 1'b0;
+              lsb_done <= 1'b0;
+              clear_signal <= 1'b0;
+              predictor_signal <= 1'b0;
+            end
           end
           `STORE_INSTR: begin
-            reg_done <= 1'b0;
-            lsb_done <= 1'b1;
-            lsb_tag <= front_rob;
-            clear_signal <= 1'b0;
-            predictor_signal <= 1'b0;
+            if (ready[front_rob]) begin
+              busy[front_rob] <= 1'b0;
+              front_rob <= front_rob + 1;
+              reg_done <= 1'b0;
+              lsb_done <= 1'b1;
+              lsb_tag <= front_rob;
+              clear_signal <= 1'b0;
+              predictor_signal <= 1'b0;
+            end  else begin  // reset the signals, avoiding handling the signals for more than one time
+              reg_done <= 1'b0;
+              lsb_done <= 1'b0;
+              clear_signal <= 1'b0;
+              predictor_signal <= 1'b0;
+            end
           end
           `BRANCH_INSTR: begin
-            reg_done <= 1'b0;
-            lsb_done <= 1'b0;
-            if (value[front_rob][1] ^ value[front_rob][0]) begin  // predict wrongly
-              clear_signal <= 1'b1;
-              correct_pc   <= value[front_rob] & 32'h0003FFFC;  // set high bits and last two bits to 0
-            end else begin
+            if (ready[front_rob]) begin
+              busy[front_rob] <= 1'b0;
+              front_rob <= front_rob + 1;
+              reg_done <= 1'b0;
+              lsb_done <= 1'b0;
+              if (value[front_rob][1] ^ value[front_rob][0]) begin  // predict wrongly
+                clear_signal <= 1'b1;
+                correct_pc   <= value[front_rob] & 32'h0003FFFC;  // set high bits and last two bits to 0
+              end else begin
+                clear_signal <= 1'b0;
+              end
+              predictor_signal <= 1'b1;
+              predictor_branch <= value[front_rob][0];
+              predictor_addr   <= value[front_rob][31:32-LOCAL_WIDTH];
+            end  else begin  // reset the signals, avoiding handling the signals for more than one time
+              reg_done <= 1'b0;
+              lsb_done <= 1'b0;
               clear_signal <= 1'b0;
+              predictor_signal <= 1'b0;
             end
-            predictor_signal <= 1'b1;
-            predictor_branch <= value[front_rob][0];
-            predictor_addr   <= value[front_rob][31:32-LOCAL_WIDTH];
           end
           `LOAD_INSTR: begin
-            reg_done <= 1'b1;
-            reg_value <= value[front_rob];
-            reg_tag <= front_rob;
-            reg_id <= rd_id[front_rob];
-            lsb_done <= 1'b1;
-            lsb_tag <= front_rob;
-            clear_signal <= 1'b0;
-            predictor_signal <= 1'b0;
+            if (ready[front_rob]) begin
+              busy[front_rob] <= 1'b0;
+              front_rob <= front_rob + 1;
+              reg_done <= 1'b1;
+              reg_value <= value[front_rob];
+              reg_tag <= front_rob;
+              reg_id <= rd_id[front_rob];
+              lsb_done <= 1'b0;
+              clear_signal <= 1'b0;
+              predictor_signal <= 1'b0;
+            end else begin  // send to IO input
+              reg_done <= 1'b0;
+              lsb_done <= 1'b1;
+              lsb_tag <= front_rob;
+              clear_signal <= 1'b0;
+              predictor_signal <= 1'b0;
+            end
           end
         endcase
       end else begin  // reset the signals, avoiding handling the signals for more than one time

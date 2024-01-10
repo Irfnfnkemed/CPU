@@ -136,8 +136,9 @@ module memory_controller (
               4: lsb_dout[31:24] <= mem_din;
             endcase
             if (stage == lsb_len + 1) begin  // finish
-              status   <= `FREE_STATUS;
+              status <= `FREE_STATUS;
               lsb_done <= 1'd1;
+              mem_a <= 32'h00000000;
               case (lsb_len)  // signed load
                 2'b00: begin
                   lsb_dout[31:8] <= lsb_signed ? {24{mem_din[7]}} : {24{1'b0}};

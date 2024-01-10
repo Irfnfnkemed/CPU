@@ -74,4 +74,39 @@ module register_file #(
     end
   end
 
+  integer f;
+  integer ff;
+  initial begin
+    f  = $fopen("f");
+    ff = $fopen("ff");
+    t  = 0;
+  end
+
+  // integer i;
+  // always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
+  //   if (~rst_in & rdy_in) begin  // 0th reg cannot be modified
+  //     //$fdisplay(f, "signal:%d,commit_tag:%d", rob_commit_signal, commit_rd_tag);
+  //     $fdisplay(f,"");
+  //     for (i = 1; i < 32; i = i + 1) begin
+  //       $fdisplay(f, "%d:%d, tag:%d, valid:%d", i, values[i], tags[i], valid[i]);
+  //     end
+  //   end
+  // end
+
+  integer i;
+  always @(posedge clk_in) begin  // removing tag and updating value when matching the tag and instr-fetch doesn't put new tag on rd
+    t <= t + 1;
+    if (~rst_in & rdy_in & rob_commit_signal) begin  // 0th reg cannot be modified
+      //$fdisplay(f, "signal:%d,commit_tag:%d", rob_commit_signal, commit_rd_tag);
+      $fdisplay(f, "");
+      for (i = 1; i < 32; i = i + 1) begin
+        $fdisplay(f, "%d:%h", i, values[i]);
+      end
+      $fdisplay(ff, "%d", t);
+      for (i = 1; i < 32; i = i + 1) begin
+        $fdisplay(ff, "%d:%h", i, values[i]);
+      end
+    end
+  end
+
 endmodule

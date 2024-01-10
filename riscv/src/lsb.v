@@ -132,19 +132,19 @@ module load_store_buffer #(
           if (mem_done & ~wr[front] & (tag_rd[front] == issue_tag_addr)) begin
             address[rear] <= mem_din;
             valid_addr[rear] <= 1'b1;
-            ready[rear] <= ~issue_wr & ~(mem_din == 32'h30000);
+            ready[rear] <= ~issue_wr & ~(mem_din + {{20{issue_offset[11]}}, issue_offset[11:0]} == 32'h30000);
           end else if (done_signal & (done_tag == issue_tag_addr)) begin
             address[rear] <= done_value;
             valid_addr[rear] <= 1'b1;
-            ready[rear] <= ~issue_wr & ~(done_value == 32'h30000);
+            ready[rear] <= ~issue_wr & ~(done_value + {{20{issue_offset[11]}}, issue_offset[11:0]} == 32'h30000);
           end else if (alu1_signal & (alu1_tag == issue_tag_addr)) begin
             address[rear] <= alu1_value;
             valid_addr[rear] <= 1'b1;
-            ready[rear] <= ~issue_wr & ~(alu1_value == 32'h30000);
+            ready[rear] <= ~issue_wr & ~(alu1_value + {{20{issue_offset[11]}}, issue_offset[11:0]} == 32'h30000);
           end else if (alu2_signal & (alu2_tag == issue_tag_addr)) begin
             address[rear] <= alu2_value;
             valid_addr[rear] <= 1'b1;
-            ready[rear] <= ~issue_wr & ~(alu2_value == 32'h30000);
+            ready[rear] <= ~issue_wr & ~(alu2_value + {{20{issue_offset[11]}}, issue_offset[11:0]} == 32'h30000);
           end else begin
             valid_addr[rear] <= 1'b0;
             ready[rear] <= 1'b0;
@@ -152,7 +152,7 @@ module load_store_buffer #(
         end else begin
           address[rear] <= issue_addr;
           valid_addr[rear] <= 1'b1;
-          ready[rear] <= ~issue_wr & ~(issue_addr == 32'h30000);  // for loading, ready bit is same to valid_addr(considering updation through ALU/MEM result); for storing, ready bit is 0
+          ready[rear] <= ~issue_wr & ~(issue_addr + {{20{issue_offset[11]}}, issue_offset[11:0]} == 32'h30000);  // for loading, ready bit is same to valid_addr(considering updation through ALU/MEM result); for storing, ready bit is 0
         end
         if (issue_wr & ~issue_valid_value) begin
           if (mem_done & ~wr[front] & (tag_rd[front] == issue_tag_value)) begin
@@ -220,7 +220,7 @@ module load_store_buffer #(
             if (wr[i_commit]) begin
               ready[i_commit]   <= 1'b1;
               last_store_commit <= i_commit;  // only one line(infact,store) can be modified
-            end else if (valid_addr[i_commit] & (address[i_commit] == 32'h30000)) begin
+            end else if (valid_addr[i_commit] & (address[i_commit] + {{20{offset[i_commit][11]}}, offset[i_commit][11:0]} == 32'h30000)) begin
               ready[i_commit] <= 1'b1;
             end
           end
