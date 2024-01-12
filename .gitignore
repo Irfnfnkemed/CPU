@@ -4,4 +4,8 @@ riscv/testspace/*
 *.vcd
 *.date
 
+riscv/fpga/*
+riscv/script/*
+riscv/sim/*
+
 !.keep
